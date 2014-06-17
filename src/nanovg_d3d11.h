@@ -52,7 +52,8 @@ void nvgDeleteD3D11(struct NVGcontext* ctx);
 
 // The cpp calling is much simpler.
 // For 'c' calling of DX, we need to do pPtr->lpVtbl->Func(pPtr, ...)
-// There's probably a better way...
+// There's probably a better way... (but note we can't use the IInterace_Method() helpers because
+// They won't work when compiled for cpp)
 #ifdef __cplusplus
 #define D3D_API(p, name, arg1) p->name()
 #define D3D_API_1(p, name, arg1) p->name(arg1)
@@ -61,7 +62,7 @@ void nvgDeleteD3D11(struct NVGcontext* ctx);
 #define D3D_API_4(p, name, arg1, arg2, arg3, arg4) p->name(arg1, arg2, arg3, arg4)
 #define D3D_API_5(p, name, arg1, arg2, arg3, arg4, arg5) p->name(arg1, arg2, arg3, arg4, arg5)
 #define D3D_API_6(p, name, arg1, arg2, arg3, arg4, arg5, arg6) p->name(arg1, arg2, arg3, arg4, arg5, arg6)
-#define SAFE_RELEASE(p) { if ( (p) ) { (p)->Release(); (p) = NULL; } }
+#define D3D_API_RELEASE(p) { if ( (p) ) { (p)->Release(); (p) = NULL; } }
 #else
 #define D3D_API(p, name) p->lpVtbl->name(p)
 #define D3D_API_1(p, name, arg1) p->lpVtbl->name(p, arg1)
@@ -70,7 +71,7 @@ void nvgDeleteD3D11(struct NVGcontext* ctx);
 #define D3D_API_4(p, name, arg1, arg2, arg3, arg4) p->lpVtbl->name(p, arg1, arg2, arg3, arg4)
 #define D3D_API_5(p, name, arg1, arg2, arg3, arg4, arg5) p->lpVtbl->name(p, arg1, arg2, arg3, arg4, arg5)
 #define D3D_API_6(p, name, arg1, arg2, arg3, arg4, arg5, arg6) p->lpVtbl->name(p, arg1, arg2, arg3, arg4, arg5, arg6)
-#define SAFE_RELEASE(p) { if ( (p) ) { (p)->lpVtbl->Release((p)); (p) = NULL; } }
+#define D3D_API_RELEASE(p) { if ( (p) ) { (p)->lpVtbl->Release((p)); (p) = NULL; } }
 #endif
 
 #pragma pack(push)
@@ -221,8 +222,8 @@ static int D3Dnvg__deleteTexture(struct D3DNVGcontext* D3D, int id)
         if (D3D->textures[i].id == id) {
             if (D3D->textures[i].tex != 0)
             {
-                SAFE_RELEASE(D3D->textures[i].tex);
-                SAFE_RELEASE(D3D->textures[i].resourceView);
+                D3D_API_RELEASE(D3D->textures[i].tex);
+                D3D_API_RELEASE(D3D->textures[i].resourceView);
             }
             memset(&D3D->textures[i], 0, sizeof(D3D->textures[i]));
             return 1;
@@ -262,8 +263,8 @@ static int D3Dnvg__createShader(struct D3DNVGcontext* D3D, struct D3DNVGshader* 
 
 static void D3Dnvg__deleteShader(struct D3DNVGshader* shader)
 {
-    SAFE_RELEASE(shader->vert);
-    SAFE_RELEASE(shader->frag);
+    D3D_API_RELEASE(shader->vert);
+    D3D_API_RELEASE(shader->frag);
 }
 
 void D3Dnvg_buildFanIndices(struct D3DNVGcontext* D3D)
@@ -379,7 +380,14 @@ static void D3Dnvg_updateShaders(struct D3DNVGcontext* D3D)
     D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pPSConstants, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
     memcpy(MappedResource.pData, &D3D->shader.pc, sizeof(struct PS_CONSTANTS));
     D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pPSConstants, 0);
+
+    // Ensure valid state
     D3D_API_3(D3D->pDeviceContext, PSSetConstantBuffers, 0, 1, &D3D->pPSConstants);
+    D3D_API_3(D3D->pDeviceContext, VSSetConstantBuffers, 0, 1, &D3D->pVSConstants);
+
+    D3D_API_3(D3D->pDeviceContext, PSSetShader, D3D->shader.frag, NULL, 0);
+    D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->shader.vert, NULL, 0);
+    D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pSamplerState);
 }
 
 static int D3Dnvg__renderCreate(void* uptr)
@@ -765,14 +773,7 @@ static void D3Dnvg__renderViewport(void* uptr, int width, int height, int alphaB
     memcpy(mappedResource.pData, &D3D->shader.vc, sizeof(struct VS_CONSTANTS));
     D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pVSConstants, 0);
 
-    D3D_API_3(D3D->pDeviceContext, VSSetConstantBuffers, 0, 1, &D3D->pVSConstants);
-
-    // Shaders always the same
-    D3D_API_3(D3D->pDeviceContext, PSSetShader, D3D->shader.frag, NULL, 0);
-    D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->shader.vert, NULL, 0);
-
-    // Sampler always the same
-    D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pSamplerState);
+    
 
 }
 
@@ -1083,32 +1084,32 @@ static void D3Dnvg__renderDelete(void* uptr)
 
     for (i = 0; i < D3D->ntextures; i++) 
     {
-        SAFE_RELEASE(D3D->textures[i].tex);
-        SAFE_RELEASE(D3D->textures[i].resourceView);
+        D3D_API_RELEASE(D3D->textures[i].tex);
+        D3D_API_RELEASE(D3D->textures[i].resourceView);
     }
-    SAFE_RELEASE(D3D->pSamplerState);
+    D3D_API_RELEASE(D3D->pSamplerState);
 
-    SAFE_RELEASE(D3D->VertexBuffer.pBuffer);
+    D3D_API_RELEASE(D3D->VertexBuffer.pBuffer);
 
-    SAFE_RELEASE(D3D->pVSConstants);
-    SAFE_RELEASE(D3D->pPSConstants);
+    D3D_API_RELEASE(D3D->pVSConstants);
+    D3D_API_RELEASE(D3D->pPSConstants);
 
-    SAFE_RELEASE(D3D->pFanIndexBuffer);
-    SAFE_RELEASE(D3D->pLayoutRenderTriangles);
+    D3D_API_RELEASE(D3D->pFanIndexBuffer);
+    D3D_API_RELEASE(D3D->pLayoutRenderTriangles);
 
-    SAFE_RELEASE(D3D->pBSBlend);
-    SAFE_RELEASE(D3D->pBSBlendPremult);
-    SAFE_RELEASE(D3D->pBSNoWrite);
-    SAFE_RELEASE(D3D->pRSCull);
-    SAFE_RELEASE(D3D->pRSNoCull);
-    SAFE_RELEASE(D3D->pDepthStencilDrawShapes);
-    SAFE_RELEASE(D3D->pDepthStencilDrawAA);
-    SAFE_RELEASE(D3D->pDepthStencilFill);
-    SAFE_RELEASE(D3D->pDepthStencilDefault);
+    D3D_API_RELEASE(D3D->pBSBlend);
+    D3D_API_RELEASE(D3D->pBSBlendPremult);
+    D3D_API_RELEASE(D3D->pBSNoWrite);
+    D3D_API_RELEASE(D3D->pRSCull);
+    D3D_API_RELEASE(D3D->pRSNoCull);
+    D3D_API_RELEASE(D3D->pDepthStencilDrawShapes);
+    D3D_API_RELEASE(D3D->pDepthStencilDrawAA);
+    D3D_API_RELEASE(D3D->pDepthStencilFill);
+    D3D_API_RELEASE(D3D->pDepthStencilDefault);
 
     // We took a reference to this
     // Don't delete the device though.
-    SAFE_RELEASE(D3D->pDeviceContext);
+    D3D_API_RELEASE(D3D->pDeviceContext);
     
     free(D3D->textures);
 
