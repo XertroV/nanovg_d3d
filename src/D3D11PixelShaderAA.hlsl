@@ -48,6 +48,7 @@ float strokeMask(float2 ftcoord)
 
 float4 D3D11PixelShaderAA_Main(PS_INPUT input) : SV_TARGET
 {
+    float4 result;
     float scissor = scissorMask(input.fpos);
     float strokeAlpha = strokeMask(input.ftcoord);
     if (type == 0) 
@@ -58,33 +59,39 @@ float4 D3D11PixelShaderAA_Main(PS_INPUT input) : SV_TARGET
         float4 color = lerp(innerCol, outerCol, d);
         
         // Combine alpha
-        color.w *= strokeAlpha * scissor;
-        return color;
+        color *= strokeAlpha * scissor;
+        result = color;
     }
     else if (type == 1)
     {
         // Calculate color fron texture
         float2 pt = (mul((float3x3)paintMat, float3(input.fpos,1.0))).xy / extent.xy;
         float4 color = g_texture.Sample(g_sampler, pt);
-        color = texType == 0 ? color : float4(1,1,1,color.x);
+        if (texType == 1) color = float4(color.xyz*color.w,color.w);
+		if (texType == 2) color = float4(color.x, color.x, color.x, color.x);
+		
         // Apply color tint and alpha.
         color *= innerCol;
         // Combine alpha
-        color.w *= strokeAlpha * scissor;
-        return color;
+        color *= strokeAlpha * scissor;
+        result = color;
     }
     else if (type == 2)
     {
         // Stencil fill
-        return float4(1,1,1,1);
+        result = float4(1,1,1,1);
     } 
     else 
     {
         // Textured tris
         float4 color = g_texture.Sample(g_sampler, input.ftcoord);
-        color = texType == 0 ? color : float4(1,1,1,color.x);
-        color.w *= scissor;
-        return (color * innerCol);
+        if (texType == 1) color = float4(color.xyz*color.w,color.w);
+		if (texType == 2) color = float4(color.x, color.x, color.x, color.x);
+		color *= scissor;
+        result = (color * innerCol);
     }
+    if (strokeAlpha < strokeMult.y)
+        discard;
+    return result;
 }
 
