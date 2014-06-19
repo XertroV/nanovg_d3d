@@ -28,10 +28,25 @@
 extern "C" {
 #endif
 
+// Flag indicating if geoemtry based anti-aliasing is used (may not be needed when using MSAA).
 #define NVG_ANTIALIAS 1
+
+// Flag indicating if strokes should be drawn using stencil buffer. The rendering will be a little
+// slower, but path overlaps (i.e. self-intersecting or sharp turns) will be drawn just once.
+#define NVG_STENCIL_STROKES 2
 
 struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash, int edgeaa);
 void nvgDeleteD3D11(struct NVGcontext* ctx);
+
+enum NVD3Dtextureflags {
+    NVD3D_TEXTURE_FLIP_Y = 0x01,
+    NVD3D_TEXTURE_NODELETE = 0x02,
+    NVD3D_TEXTURE_PREMULTIPLIED = 0x04
+};
+
+int nvd3dCreateImageFromHandle(struct NVGcontext* ctx, void* texture, int w, int h, int flags);
+unsigned int nvd3dImageHandle(struct NVGcontext* ctx, int image);
+void nvd3dImageFlags(struct NVGcontext* ctx, int image, int flags);
 
 #ifdef __cplusplus
 }
@@ -76,7 +91,7 @@ void nvgDeleteD3D11(struct NVGcontext* ctx);
 
 #pragma pack(push)
 #pragma pack(16)
-struct PS_CONSTANTS
+struct D3DNVGfragUniforms
 {
     float scissorMat[16];
     float scissorExt[4];
@@ -85,8 +100,8 @@ struct PS_CONSTANTS
     float extent[4];
     float radius[4];
     float feather[4];
-    float innerCol[4];
-    float outerCol[4];
+    struct NVGcolor innerCol;
+    struct NVGcolor outerCol;
     float strokeMult[4];
     int texType;
     int type;
@@ -109,7 +124,6 @@ enum D3DNVGshaderType {
 struct D3DNVGshader {
     ID3D11PixelShader* frag;
     ID3D11VertexShader* vert;
-    struct PS_CONSTANTS pc;
     struct VS_CONSTANTS vc;
 };
 
@@ -119,6 +133,32 @@ struct D3DNVGtexture {
     ID3D11ShaderResourceView* resourceView;
     int width, height;
     int type;
+    int flags;
+};
+
+enum D3DNVGcallType {
+    D3DNVG_NONE = 0,
+    D3DNVG_FILL,
+    D3DNVG_CONVEXFILL,
+    D3DNVG_STROKE,
+    D3DNVG_TRIANGLES
+};
+
+struct D3DNVGcall {
+	int type;
+	int image;
+	int pathOffset;
+	int pathCount;
+	int triangleOffset;
+	int triangleCount;
+	int uniformOffset;
+};
+
+struct D3DNVGpath {
+	int fillOffset;
+	int fillCount;
+	int strokeOffset;
+	int strokeCount;
 };
 
 struct D3DNVGBuffer {
@@ -128,28 +168,45 @@ struct D3DNVGBuffer {
 };
 
 struct D3DNVGcontext {
-    ID3D11Device* pDevice;
-    ID3D11DeviceContext* pDeviceContext;
-
-    unsigned int alphaMode;
-
-    struct D3DNVGshader shader;
-    ID3D11Buffer* pVSConstants;
-    ID3D11Buffer* pPSConstants;
     
+    struct D3DNVGshader shader;
+    struct D3DNVGtexture* textures;
+    float view[2];    
     int ntextures;
     int ctextures;
     int textureId;
-    struct D3DNVGtexture* textures;
     ID3D11SamplerState* pSamplerState;
 
-    int edgeAntiAlias;
-    
-    struct D3DNVGBuffer VertexBuffer;
+    int fragSize;
+    int flags;
 
+    // Per frame buffers
+	struct D3DNVGcall* calls;
+	int ccalls;
+	int ncalls;
+	struct D3DNVGpath* paths;
+	int cpaths;
+	int npaths;
+	struct NVGvertex* verts;
+	int cverts;
+	int nverts;
+	unsigned char* uniforms;
+	int cuniforms;
+	int nuniforms;
+
+    // D3D
+    // Geometry
+    struct D3DNVGBuffer VertexBuffer;
     ID3D11Buffer* pFanIndexBuffer;
     ID3D11InputLayout* pLayoutRenderTriangles;
-    
+
+    // State
+    ID3D11Buffer* pVSConstants;
+    ID3D11Buffer* pPSConstants;
+
+    ID3D11Device* pDevice;
+    ID3D11DeviceContext* pDeviceContext;
+
     ID3D11BlendState* pBSBlend;
     ID3D11BlendState* pBSBlendPremult;
     ID3D11BlendState* pBSNoWrite;
@@ -163,22 +220,7 @@ struct D3DNVGcontext {
     ID3D11DepthStencilState* pDepthStencilDefault;
 };
 
-static void D3Dnvg__vset(struct NVGvertex* vtx, float x, float y, float u, float v)
-{
-	vtx->x = x;
-	vtx->y = y;
-	vtx->u = u;
-	vtx->v = v;
-}
-
-static void D3Dnvg_copyMatrix3to4(float* pDest, const float* pSource)
-{
-    unsigned int i;
-    for (i = 0; i < 4; i++)
-    {
-        memcpy(&pDest[i * 4], &pSource[i * 3], sizeof(float) * 3);
-    }
-}
+static int D3Dnvg__maxi(int a, int b) { return a > b ? a : b; }
 
 static struct D3DNVGtexture* D3Dnvg__allocTexture(struct D3DNVGcontext* D3D)
 {
@@ -193,9 +235,12 @@ static struct D3DNVGtexture* D3Dnvg__allocTexture(struct D3DNVGcontext* D3D)
     }
     if (tex == NULL) {
         if (D3D->ntextures + 1 > D3D->ctextures) {
-            D3D->ctextures = (D3D->ctextures == 0) ? 2 : D3D->ctextures * 2;
-            D3D->textures = (struct D3DNVGtexture*)realloc(D3D->textures, sizeof(struct D3DNVGtexture)*D3D->ctextures);
-            if (D3D->textures == NULL) return NULL;
+            struct D3DNVGtexture* textures;
+            int ctextures = D3Dnvg__maxi(D3D->ntextures+1, 4) +  D3D->ctextures/2; // 1.5x Overallocate
+            textures = (struct D3DNVGtexture*)realloc(D3D->textures, sizeof(struct D3DNVGtexture)*D3D->ctextures);
+            if (textures == NULL) return NULL;
+            D3D->textures = textures;
+            D3D->ctextures = ctextures;
         }
         tex = &D3D->textures[D3D->ntextures++];
     }
@@ -220,7 +265,7 @@ static int D3Dnvg__deleteTexture(struct D3DNVGcontext* D3D, int id)
     int i;
     for (i = 0; i < D3D->ntextures; i++) {
         if (D3D->textures[i].id == id) {
-            if (D3D->textures[i].tex != 0)
+            if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVD3D_TEXTURE_NODELETE) == 0)
             {
                 D3D_API_RELEASE(D3D->textures[i].tex);
                 D3D_API_RELEASE(D3D->textures[i].resourceView);
@@ -231,6 +276,18 @@ static int D3Dnvg__deleteTexture(struct D3DNVGcontext* D3D, int id)
     }
     return 0;
 }
+
+// BEGIN D3D specific
+
+static void D3Dnvg_copyMatrix3to4(float* pDest, const float* pSource)
+{
+    unsigned int i;
+    for (i = 0; i < 4; i++)
+    {
+        memcpy(&pDest[i * 4], &pSource[i * 3], sizeof(float) * 3);
+    }
+}
+// END D3D specific
 
 static int D3Dnvg__checkError(HRESULT hr, const char* str)
 {
@@ -371,25 +428,6 @@ static void D3Dnvg_setBuffers(struct D3DNVGcontext* D3D, unsigned int dynamicOff
     D3D_API_1(D3D->pDeviceContext, IASetInputLayout, D3D->pLayoutRenderTriangles);
 }
 
-static void D3Dnvg_updateShaders(struct D3DNVGcontext* D3D)
-{
-    D3D11_MAPPED_SUBRESOURCE MappedResource;
-
-    // Pixel shader constants
-    // TODO: Could possibly be more efficient about when this structure is updated.
-    D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pPSConstants, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
-    memcpy(MappedResource.pData, &D3D->shader.pc, sizeof(struct PS_CONSTANTS));
-    D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pPSConstants, 0);
-
-    // Ensure valid state
-    D3D_API_3(D3D->pDeviceContext, PSSetConstantBuffers, 0, 1, &D3D->pPSConstants);
-    D3D_API_3(D3D->pDeviceContext, VSSetConstantBuffers, 0, 1, &D3D->pVSConstants);
-
-    D3D_API_3(D3D->pDeviceContext, PSSetShader, D3D->shader.frag, NULL, 0);
-    D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->shader.vert, NULL, 0);
-    D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pSamplerState);
-}
-
 static int D3Dnvg__renderCreate(void* uptr)
 {
     HRESULT hr;
@@ -413,7 +451,7 @@ static int D3Dnvg__renderCreate(void* uptr)
         { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 }
     }; 
     
-    if (D3D->edgeAntiAlias) {
+    if (D3D->flags & NVG_ANTIALIAS) {
         if (D3Dnvg__createShader(D3D, &D3D->shader, g_D3D11VertexShader_Main, sizeof(g_D3D11VertexShader_Main), g_D3D11PixelShaderAA_Main, sizeof(g_D3D11PixelShaderAA_Main)) == 0)
             return 0;
     }
@@ -458,11 +496,12 @@ static int D3Dnvg__renderCreate(void* uptr)
     hr = D3D_API_3(D3D->pDevice, CreateBuffer, &bufferDesc, NULL, &D3D->pVSConstants);
     D3Dnvg__checkError(hr, "Create Constant Buffer");
 
-    bufferDesc.ByteWidth = sizeof(struct PS_CONSTANTS);
+    bufferDesc.ByteWidth = sizeof(struct D3DNVGfragUniforms);
     if ((bufferDesc.ByteWidth % 16) != 0)
     {
         bufferDesc.ByteWidth += 16 - (bufferDesc.ByteWidth % 16);
     }
+    D3D->fragSize = bufferDesc.ByteWidth;
 
     hr = D3D_API_3(D3D->pDevice, CreateBuffer, &bufferDesc, NULL, &D3D->pPSConstants);
     D3Dnvg__checkError(hr, "Create Constant Buffer");
@@ -537,6 +576,7 @@ static int D3Dnvg__renderCreate(void* uptr)
     sampDesc.MipLODBias = 0.0f;//-1.0f;
 
     D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pSamplerState);
+    
     return 1;
 }
 
@@ -680,51 +720,51 @@ static void D3Dnvg__xformToMat3x3(float* m3, float* t)
     m3[8] = 1.0f;
 }
 
-static int D3Dnvg__setupPaint(struct D3DNVGcontext* D3D, struct NVGpaint* paint, struct NVGscissor* scissor, float width, float fringe)
+static struct NVGcolor D3Dnvg__premulColor(struct NVGcolor c)
+{
+	c.r *= c.a;
+	c.g *= c.a;
+	c.b *= c.a;
+	return c;
+}
+
+static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUniforms* frag, 
+    struct NVGpaint* paint, struct NVGscissor* scissor,
+    float width, float fringe, float strokeThr)
 {
     struct D3DNVGtexture* tex = NULL;
     float invxform[6], paintMat[9], scissorMat[9];
-    float scissorx = 0, scissory = 0;
-    float scissorsx = 0, scissorsy = 0;
 
-    nvgTransformInverse(invxform, paint->xform);
-    D3Dnvg__xformToMat3x3(paintMat, invxform);
+    memset(frag, 0, sizeof(*frag));
 
+    frag->innerCol = D3Dnvg__premulColor(paint->innerColor);
+    frag->outerCol = D3Dnvg__premulColor(paint->outerColor);
+    
     if (scissor->extent[0] < 0.5f || scissor->extent[1] < 0.5f) 
     {
         memset(scissorMat, 0, sizeof(scissorMat));
-        scissorx = 1.0f;
-        scissory = 1.0f;
-        scissorsx = 1.0f;
-        scissorsy = 1.0f;
+        frag->scissorExt[0] = 1.0f;
+        frag->scissorExt[1] = 1.0f;
+        frag->scissorScale[0] = 1.0f;
+        frag->scissorScale[1] = 1.0f;
     }
-    else {
+    else 
+    {
         nvgTransformInverse(invxform, scissor->xform);
         D3Dnvg__xformToMat3x3(scissorMat, invxform);
-        scissorx = scissor->extent[0];
-        scissory = scissor->extent[1];
-        scissorsx = sqrtf(scissor->xform[0] * scissor->xform[0] + scissor->xform[2] * scissor->xform[2]) / fringe;
-        scissorsy = sqrtf(scissor->xform[1] * scissor->xform[1] + scissor->xform[3] * scissor->xform[3]) / fringe;
+        frag->scissorExt[0] = scissor->extent[0];
+        frag->scissorExt[1] = scissor->extent[1];
+        frag->scissorScale[0] = sqrtf(scissor->xform[0] * scissor->xform[0] + scissor->xform[2] * scissor->xform[2]) / fringe;
+        frag->scissorScale[1] = sqrtf(scissor->xform[1] * scissor->xform[1] + scissor->xform[3] * scissor->xform[3]) / fringe;
     }
+    D3Dnvg_copyMatrix3to4(frag->scissorMat, scissorMat);
+    
 
+    frag->extent[0] = paint->extent[0];
+    frag->extent[1] = paint->extent[1];
 
-    memcpy(D3D->shader.pc.innerCol, paint->innerColor.rgba, sizeof(float)* 4);
-    memcpy(D3D->shader.pc.outerCol, paint->outerColor.rgba, sizeof(float)* 4);
-
-    D3Dnvg_copyMatrix3to4(D3D->shader.pc.scissorMat, scissorMat);
-
-    D3D->shader.pc.scissorExt[0] = scissorx;
-    D3D->shader.pc.scissorExt[1] = scissory;
-
-    D3D->shader.pc.scissorScale[0] = scissorsx;
-    D3D->shader.pc.scissorScale[1] = scissorsy;
-
-    D3Dnvg_copyMatrix3to4(D3D->shader.pc.paintMat, paintMat);
-
-    D3D->shader.pc.extent[0] = paint->extent[0];
-    D3D->shader.pc.extent[1] = paint->extent[1];
-
-    D3D->shader.pc.strokeMult[0] = (width*0.5f + fringe*0.5f) / fringe;
+    frag->strokeMult[0] = (width*0.5f + fringe*0.5f) / fringe;
+    frag->strokeMult[1] = strokeThr;
 
     if (paint->image != 0) 
     {
@@ -734,65 +774,101 @@ static int D3Dnvg__setupPaint(struct D3DNVGcontext* D3D, struct NVGpaint* paint,
             return 0;
         }
         
-        D3D_API_3(D3D->pDeviceContext, PSSetShaderResources,0, 1, &tex->resourceView);
- 
-        D3D->shader.pc.texType = (tex->type == NVG_TEXTURE_RGBA ? 0 : 1);
+        if ((tex->flags & NVD3D_TEXTURE_FLIP_Y) != 0) 
+        {
+			float flipped[6];
+			nvgTransformScale(flipped, 1.0f, -1.0f);
+			nvgTransformMultiply(flipped, paint->xform);
+			nvgTransformInverse(invxform, flipped);
+		} 
+        else
+        {
+			nvgTransformInverse(invxform, paint->xform);
+		}
+		frag->type = NSVG_SHADER_FILLIMG;
+        
+		if (tex->type == NVG_TEXTURE_RGBA)
+        {
+			frag->texType = (tex->flags & NVD3D_TEXTURE_PREMULTIPLIED) ? 0 : 1;
+        }
+        else
+        {
+			frag->texType = 2;
+        }
+
+        frag->texType = (tex->type == NVG_TEXTURE_RGBA ? 0 : 1);
     }
     else 
     {
-        D3D->shader.pc.type = NSVG_SHADER_FILLGRAD;
-        D3D->shader.pc.radius[0] = paint->radius;
-        D3D->shader.pc.feather[0] = paint->feather;
+        frag->type = NSVG_SHADER_FILLGRAD;
+        frag->radius[0] = paint->radius;
+        frag->feather[0] = paint->feather;
+        nvgTransformInverse(invxform, paint->xform);
     }
 
-    D3Dnvg_updateShaders(D3D);
+    D3Dnvg__xformToMat3x3(paintMat, invxform);
+    D3Dnvg_copyMatrix3to4(frag->paintMat, paintMat);
+
+    //D3Dnvg_updateShaders(D3D);
 
     return 1;
 }
 
-static void D3Dnvg__renderViewport(void* uptr, int width, int height, int alphaBlend)
+static struct D3DNVGfragUniforms* nvg__fragUniformPtr(struct D3DNVGcontext* D3D, int i);
+
+static void d3dnvg_setUniforms(struct D3DNVGcontext* D3D, int uniformOffset, int image)
+{
+    struct D3DNVGfragUniforms* frag = nvg__fragUniformPtr(D3D, uniformOffset);
+
+    D3D11_MAPPED_SUBRESOURCE MappedResource;
+
+    // Pixel shader constants
+    D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pPSConstants, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+    memcpy(MappedResource.pData, frag, sizeof(struct D3DNVGfragUniforms));
+    D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pPSConstants, 0);
+
+    if (image != 0) 
+    {
+		struct D3DNVGtexture* tex = D3Dnvg__findTexture(D3D, image);
+        if (tex != NULL)
+        {
+    	    D3D_API_3(D3D->pDeviceContext, PSSetShaderResources,0, 1, &tex->resourceView);
+        }
+        else
+        {
+            D3D_API_3(D3D->pDeviceContext, PSSetShaderResources,0, 1, NULL);
+        }
+    }
+    else
+    {
+        D3D_API_3(D3D->pDeviceContext, PSSetShaderResources,0, 1, NULL);
+	}
+
+    // Ensure valid state
+    D3D_API_3(D3D->pDeviceContext, PSSetConstantBuffers, 0, 1, &D3D->pPSConstants);
+    D3D_API_3(D3D->pDeviceContext, VSSetConstantBuffers, 0, 1, &D3D->pVSConstants);
+
+    D3D_API_3(D3D->pDeviceContext, PSSetShader, D3D->shader.frag, NULL, 0);
+    D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->shader.vert, NULL, 0);
+    D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pSamplerState);
+}
+
+static void D3Dnvg__renderViewport(void* uptr, int width, int height)
 {
     struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     
-    D3D->alphaMode = alphaBlend;
+    //D3D->alphaMode = alphaBlend;
     D3D->shader.vc.viewSize[0] = (float)width;
     D3D->shader.vc.viewSize[1] = (float)height;
-
-    if (alphaBlend == NVG_PREMULTIPLIED_ALPHA)
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlendPremult, NULL, 0xFFFFFFFF);
-    }
-    else
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlend, NULL, 0xFFFFFFFF);
-    }
 
     // Vertex parameters only change when viewport size changes
     D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pVSConstants, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
     memcpy(mappedResource.pData, &D3D->shader.vc, sizeof(struct VS_CONSTANTS));
     D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pVSConstants, 0);
-
-    
-
 }
 
-static void D3Dnvg__renderFlush(void* uptr, int alphaBlend)
-{
-    NVG_NOTUSED(uptr);
-    NVG_NOTUSED(alphaBlend);
-}
-
-static int D3Dnvg__maxVertCount(const struct NVGpath* paths, int npaths)
-{
-    int i, count = 0;
-    for (i = 0; i < npaths; i++) {
-        count += paths[i].nfill;
-        count += paths[i].nstroke;
-    }
-    return count;
-}
-
+/*
 
 static void D3Dnvg__uploadPaths(struct NVGvertex* pVertex, const struct NVGpath* paths, int npaths)
 {
@@ -839,15 +915,7 @@ static void D3Dnvg__renderFill(void* uptr, struct NVGpaint* paint, struct NVGsci
     D3Dnvg_endVertexBuffer(D3D);
 
     D3Dnvg_setBuffers(D3D, baseOffset);
-     
-    if (D3D->alphaMode == NVG_PREMULTIPLIED_ALPHA)
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlendPremult, NULL, 0xFFFFFFFF);
-    }
-    else
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlend, NULL, 0xFFFFFFFF);
-    }
+
 
     D3D->shader.pc.type = NSVG_SHADER_FILLIMG;
 
@@ -937,14 +1005,7 @@ static void D3Dnvg__renderFill(void* uptr, struct NVGpaint* paint, struct NVGsci
         D3D_API_1(D3D->pDeviceContext, RSSetState, D3D->pRSCull);
         
         // Draw aliased off-pixels
-        if (D3D->alphaMode == NVG_PREMULTIPLIED_ALPHA)
-        {
-            D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlendPremult, NULL, 0xFFFFFFFF);
-        }
-        else
-        {
-            D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlend, NULL, 0xFFFFFFFF);
-        }
+        
 
 
         if (D3D->edgeAntiAlias) 
@@ -999,14 +1060,6 @@ static void D3Dnvg__renderStroke(void* uptr, struct NVGpaint* paint, struct NVGs
         return;
     }
 
-    if (D3D->alphaMode == NVG_PREMULTIPLIED_ALPHA)
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlendPremult, NULL, 0xFFFFFFFF);
-    }
-    else
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlend, NULL, 0xFFFFFFFF);
-    }
     D3D->shader.pc.type = NSVG_SHADER_FILLIMG;
 
     D3Dnvg__setupPaint(D3D, paint, scissor, width, fringe);
@@ -1042,15 +1095,6 @@ static void D3Dnvg__renderTriangles(void* uptr, struct NVGpaint* paint, struct N
     struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
     unsigned int buffer0Offset;
 
-    if (D3D->alphaMode == NVG_PREMULTIPLIED_ALPHA)
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlendPremult, NULL, 0xFFFFFFFF);
-    } 
-    else
-    {
-        D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlend, NULL, 0xFFFFFFFF);
-    }
-
     if (D3D->shader.vert == NULL ||
         D3D->shader.frag == NULL)
     {
@@ -1069,6 +1113,468 @@ static void D3Dnvg__renderTriangles(void* uptr, struct NVGpaint* paint, struct N
     D3D_API_1(D3D->pDeviceContext, IASetPrimitiveTopology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     
     D3D_API_2(D3D->pDeviceContext, Draw, nverts, 0);
+}*/
+
+
+static void D3Dnvg__fill(struct D3DNVGcontext* D3D, struct D3DNVGcall* call)
+{
+    /*
+	struct GLNVGpath* paths = &gl->paths[call->pathOffset];
+	int i, npaths = call->pathCount;
+
+	// Draw shapes
+	glEnable(GL_STENCIL_TEST);
+	glStencilMask(0xff);
+	glStencilFunc(GL_ALWAYS, 0, 0xff);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+
+	// set bindpoint for solid loc
+	glnvg__setUniforms(gl, call->uniformOffset, 0);
+	glnvg__checkError("fill simple");
+
+	glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_KEEP, GL_INCR_WRAP);
+	glStencilOpSeparate(GL_BACK, GL_KEEP, GL_KEEP, GL_DECR_WRAP);
+	glDisable(GL_CULL_FACE);
+	for (i = 0; i < npaths; i++)
+		glDrawArrays(GL_TRIANGLE_FAN, paths[i].fillOffset, paths[i].fillCount);
+	glEnable(GL_CULL_FACE);
+
+	// Draw anti-aliased pixels
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+	glnvg__setUniforms(gl, call->uniformOffset + gl->fragSize, call->image);
+	glnvg__checkError("fill fill");
+
+	if (gl->flags & NVG_ANTIALIAS) {
+		glStencilFunc(GL_EQUAL, 0x00, 0xff);
+		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+		// Draw fringes
+		for (i = 0; i < npaths; i++)
+			glDrawArrays(GL_TRIANGLE_STRIP, paths[i].strokeOffset, paths[i].strokeCount);
+	}
+
+	// Draw fill
+	glStencilFunc(GL_NOTEQUAL, 0x0, 0xff);
+	glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
+	glDrawArrays(GL_TRIANGLES, call->triangleOffset, call->triangleCount);
+
+	glDisable(GL_STENCIL_TEST);
+    */
+}
+
+static void D3Dnvg__convexFill(struct D3DNVGcontext* D3D, struct D3DNVGcall* call)
+{
+    /*
+	struct GLNVGpath* paths = &gl->paths[call->pathOffset];
+	int i, npaths = call->pathCount;
+
+	glnvg__setUniforms(gl, call->uniformOffset, call->image);
+	glnvg__checkError("convex fill");
+
+	for (i = 0; i < npaths; i++)
+		glDrawArrays(GL_TRIANGLE_FAN, paths[i].fillOffset, paths[i].fillCount);
+	if (gl->flags & NVG_ANTIALIAS) {
+		// Draw fringes
+		for (i = 0; i < npaths; i++)
+			glDrawArrays(GL_TRIANGLE_STRIP, paths[i].strokeOffset, paths[i].strokeCount);
+	}
+    */
+}
+
+static void D3Dnvg__stroke(struct D3DNVGcontext* D3D, struct D3DNVGcall* call)
+{
+    /*
+	struct GLNVGpath* paths = &gl->paths[call->pathOffset];
+	int npaths = call->pathCount, i;
+
+	if (gl->flags & NVG_STENCIL_STROKES) {
+
+		glEnable(GL_STENCIL_TEST);
+		glStencilMask(0xff);
+
+		// Fill the stroke base without overlap
+		glStencilFunc(GL_EQUAL, 0x0, 0xff);
+		glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+		glnvg__setUniforms(gl, call->uniformOffset + gl->fragSize, call->image);
+		glnvg__checkError("stroke fill 0");
+		for (i = 0; i < npaths; i++)
+			glDrawArrays(GL_TRIANGLE_STRIP, paths[i].strokeOffset, paths[i].strokeCount);
+
+		// Draw anti-aliased pixels.
+		glnvg__setUniforms(gl, call->uniformOffset, call->image);
+		glStencilFunc(GL_EQUAL, 0x00, 0xff);
+		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+		for (i = 0; i < npaths; i++)
+			glDrawArrays(GL_TRIANGLE_STRIP, paths[i].strokeOffset, paths[i].strokeCount);
+
+		// Clear stencil buffer.		
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glStencilFunc(GL_ALWAYS, 0x0, 0xff);
+		glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
+		glnvg__checkError("stroke fill 1");
+		for (i = 0; i < npaths; i++)
+			glDrawArrays(GL_TRIANGLE_STRIP, paths[i].strokeOffset, paths[i].strokeCount);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+		glDisable(GL_STENCIL_TEST);
+
+//		glnvg__convertPaint(gl, nvg__fragUniformPtr(gl, call->uniformOffset + gl->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f/255.0f);
+
+	} else {
+		glnvg__setUniforms(gl, call->uniformOffset, call->image);
+		glnvg__checkError("stroke fill");
+		// Draw Strokes
+		for (i = 0; i < npaths; i++)
+			glDrawArrays(GL_TRIANGLE_STRIP, paths[i].strokeOffset, paths[i].strokeCount);
+	}
+    */
+}
+
+static void D3Dnvg__triangles(struct D3DNVGcontext* D3D, struct D3DNVGcall* call)
+{
+    /*
+	glnvg__setUniforms(gl, call->uniformOffset, call->image);
+	glnvg__checkError("triangles fill");
+
+	glDrawArrays(GL_TRIANGLES, call->triangleOffset, call->triangleCount);
+    */
+}
+
+
+static void D3Dnvg__renderFlush(void* uptr)
+{
+	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
+	int i;
+
+	if (D3D->ncalls > 0) 
+    {
+
+		// Setup require GL state.
+		/*glUseProgram(D3D->shader.prog);
+
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_BACK);
+		glFrontFace(GL_CCW);
+		glEnable(GL_BLEND);
+		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_SCISSOR_TEST);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glStencilMask(0xffffffff);
+		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+		glStencilFunc(GL_ALWAYS, 0, 0xffffffff);
+		glActiveTexture(GL_TEXTURE0);
+
+#if NANOVG_GL_USE_UNIFORMBUFFER
+		// Upload ubo for frag shaders
+		glBindBuffer(GL_UNIFORM_BUFFER, gl->fragBuf);
+		glBufferData(GL_UNIFORM_BUFFER, gl->nuniforms * gl->fragSize, gl->uniforms, GL_STREAM_DRAW);
+#endif
+
+		// Upload vertex data
+#if defined NANOVG_GL3
+		glBindVertexArray(gl->vertArr);
+#endif
+		glBindBuffer(GL_ARRAY_BUFFER, gl->vertBuf);
+		glBufferData(GL_ARRAY_BUFFER, gl->nverts * sizeof(struct NVGvertex), gl->verts, GL_STREAM_DRAW);
+		glEnableVertexAttribArray(0);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(struct NVGvertex), (const GLvoid*)(size_t)0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct NVGvertex), (const GLvoid*)(0 + 2*sizeof(float)));
+
+		// Set view and texture just once per frame.
+		glUniform1i(gl->shader.loc[GLNVG_LOC_TEX], 0);
+		glUniform2fv(gl->shader.loc[GLNVG_LOC_VIEWSIZE], 1, gl->view);
+
+#if NANOVG_GL_USE_UNIFORMBUFFER
+		glBindBuffer(GL_UNIFORM_BUFFER, gl->fragBuf);
+#endif
+*/
+		for (i = 0; i < D3D->ncalls; i++) {
+			struct D3DNVGcall* call = &D3D->calls[i];
+            
+			if (call->type == D3DNVG_FILL)
+				D3Dnvg__fill(D3D, call);
+			else if (call->type == D3DNVG_CONVEXFILL)
+				D3Dnvg__convexFill(D3D, call);
+			else if (call->type == D3DNVG_STROKE)
+				D3Dnvg__stroke(D3D, call);
+			else if (call->type == D3DNVG_TRIANGLES)
+				D3Dnvg__triangles(D3D, call);
+		}
+        /*
+		glDisableVertexAttribArray(0);
+		glDisableVertexAttribArray(1);
+#if defined NANOVG_GL3
+		glBindVertexArray(0);
+#endif
+		glUseProgram(0);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	    */
+    }
+
+	// Reset calls
+	D3D->nverts = 0;
+	D3D->npaths = 0;
+	D3D->ncalls = 0;
+    D3D->nuniforms = 0;
+}
+
+static int D3Dnvg__maxVertCount(const struct NVGpath* paths, int npaths)
+{
+	int i, count = 0;
+	for (i = 0; i < npaths; i++) {
+		count += paths[i].nfill;
+		count += paths[i].nstroke;
+	}
+	return count;
+}
+
+static struct D3DNVGcall* D3Dnvg__allocCall(struct D3DNVGcontext* D3D)
+{
+	struct D3DNVGcall* ret = NULL;
+	if (D3D->ncalls+1 > D3D->ccalls) {
+		struct D3DNVGcall* calls;
+		int ccalls = D3Dnvg__maxi(D3D->ncalls+1, 128) + D3D->ccalls/2; // 1.5x Overallocate
+		calls = (struct D3DNVGcall*)realloc(D3D->calls, sizeof(struct D3DNVGcall) * ccalls);
+		if (calls == NULL) return NULL;
+		D3D->calls = calls;
+		D3D->ccalls = ccalls;
+	}
+	ret = &D3D->calls[D3D->ncalls++];
+	memset(ret, 0, sizeof(struct D3DNVGcall));
+	return ret;
+}
+
+static int D3Dnvg__allocPaths(struct D3DNVGcontext* D3D, int n)
+{
+	int ret = 0;
+	if (D3D->npaths+n > D3D->cpaths) {
+		struct D3DNVGpath* paths;
+		int cpaths = D3Dnvg__maxi(D3D->npaths + n, 128) + D3D->cpaths/2; // 1.5x Overallocate
+		paths = (struct D3DNVGpath*)realloc(D3D->paths, sizeof(struct D3DNVGpath) * cpaths);
+		if (paths == NULL) return -1;
+		D3D->paths = paths;
+		D3D->cpaths = cpaths;
+	}
+	ret = D3D->npaths;
+	D3D->npaths += n;
+	return ret;
+}
+
+static int D3Dnvg__allocVerts(struct D3DNVGcontext* D3D, int n)
+{
+	int ret = 0;
+	if (D3D->nverts+n > D3D->cverts) {
+		struct NVGvertex* verts;
+		int cverts = D3Dnvg__maxi(D3D->nverts + n, 4096) + D3D->cverts/2; // 1.5x Overallocate
+		verts = (struct NVGvertex*)realloc(D3D->verts, sizeof(struct NVGvertex) * cverts);
+		if (verts == NULL) return -1;
+		D3D->verts = verts;
+		D3D->cverts = cverts;
+	}
+	ret = D3D->nverts;
+	D3D->nverts += n;
+	return ret;
+}
+
+static int D3Dnvg__allocFragUniforms(struct D3DNVGcontext* D3D, int n)
+{
+	int ret = 0, structSize = D3D->fragSize;
+	if (D3D->nuniforms+n > D3D->cuniforms) {
+		unsigned char* uniforms;
+		int cuniforms = D3Dnvg__maxi(D3D->nuniforms+n, 128) + D3D->cuniforms/2; // 1.5x Overallocate
+		uniforms = (unsigned char*)realloc(D3D->uniforms, structSize * cuniforms);
+		if (uniforms == NULL) return -1;
+		D3D->uniforms = uniforms;
+		D3D->cuniforms = cuniforms;
+	}
+	ret = D3D->nuniforms * structSize;
+	D3D->nuniforms += n;
+	return ret;
+}
+
+static struct D3DNVGfragUniforms* nvg__fragUniformPtr(struct D3DNVGcontext* D3D, int i)
+{
+	return (struct D3DNVGfragUniforms*)&D3D->uniforms[i];
+}
+
+static void D3Dnvg__vset(struct NVGvertex* vtx, float x, float y, float u, float v)
+{
+	vtx->x = x;
+	vtx->y = y;
+	vtx->u = u;
+	vtx->v = v;
+}
+
+static void D3Dnvg__renderFill(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe,
+							  const float* bounds, const struct NVGpath* paths, int npaths)
+{
+	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
+	struct D3DNVGcall* call = D3Dnvg__allocCall(D3D);
+	struct NVGvertex* quad;
+	struct D3DNVGfragUniforms* frag;
+	int i, maxverts, offset;
+
+	if (call == NULL) return;
+
+	call->type = D3DNVG_FILL;
+	call->pathOffset = D3Dnvg__allocPaths(D3D, npaths);
+	if (call->pathOffset == -1) goto error;
+	call->pathCount = npaths;
+	call->image = paint->image;
+
+	if (npaths == 1 && paths[0].convex)
+		call->type = D3DNVG_CONVEXFILL;
+
+	// Allocate vertices for all the paths.
+	maxverts = D3Dnvg__maxVertCount(paths, npaths) + 6;
+	offset = D3Dnvg__allocVerts(D3D, maxverts);
+	if (offset == -1) goto error;
+
+	for (i = 0; i < npaths; i++) {
+		struct D3DNVGpath* copy = &D3D->paths[call->pathOffset + i];
+		const struct NVGpath* path = &paths[i];
+		memset(copy, 0, sizeof(struct D3DNVGpath));
+		if (path->nfill > 0) {
+			copy->fillOffset = offset;
+			copy->fillCount = path->nfill;
+			memcpy(&D3D->verts[offset], path->fill, sizeof(struct NVGvertex) * path->nfill);
+			offset += path->nfill;
+		}
+		if (path->nstroke > 0) {
+			copy->strokeOffset = offset;
+			copy->strokeCount = path->nstroke;
+			memcpy(&D3D->verts[offset], path->stroke, sizeof(struct NVGvertex) * path->nstroke);
+			offset += path->nstroke;
+		}
+	}
+
+	// Quad
+	call->triangleOffset = offset;
+	call->triangleCount = 6;
+	quad = &D3D->verts[call->triangleOffset];
+	D3Dnvg__vset(&quad[0], bounds[0], bounds[3], 0.5f, 1.0f);
+	D3Dnvg__vset(&quad[1], bounds[2], bounds[3], 0.5f, 1.0f);
+	D3Dnvg__vset(&quad[2], bounds[2], bounds[1], 0.5f, 1.0f);
+
+	D3Dnvg__vset(&quad[3], bounds[0], bounds[3], 0.5f, 1.0f);
+	D3Dnvg__vset(&quad[4], bounds[2], bounds[1], 0.5f, 1.0f);
+	D3Dnvg__vset(&quad[5], bounds[0], bounds[1], 0.5f, 1.0f);
+
+	// Setup uniforms for draw calls
+	if (call->type == D3DNVG_FILL) {
+		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 2);
+		if (call->uniformOffset == -1) goto error;
+		// Simple shader for stencil
+		frag = nvg__fragUniformPtr(D3D, call->uniformOffset);
+		memset(frag, 0, sizeof(*frag));
+		frag->strokeMult[1] = -1.0f;
+		frag->type = NSVG_SHADER_SIMPLE;
+		// Fill shader
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, fringe, fringe, -1.0f);
+	} else {
+		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 1);
+		if (call->uniformOffset == -1) goto error;
+		// Fill shader
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f);
+	}
+
+	return;
+
+error:
+	// We get here if call alloc was ok, but something else is not.
+	// Roll back the last call to prevent drawing it.
+	if (D3D->ncalls > 0) D3D->ncalls--;
+}
+
+static void D3Dnvg__renderStroke(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe,
+								float strokeWidth, const struct NVGpath* paths, int npaths)
+{
+	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
+	struct D3DNVGcall* call = D3Dnvg__allocCall(D3D);
+	int i, maxverts, offset;
+
+	if (call == NULL) return;
+
+	call->type = D3DNVG_STROKE;
+	call->pathOffset = D3Dnvg__allocPaths(D3D, npaths);
+	if (call->pathOffset == -1) goto error;
+	call->pathCount = npaths;
+	call->image = paint->image;
+
+	// Allocate vertices for all the paths.
+	maxverts = D3Dnvg__maxVertCount(paths, npaths);
+	offset = D3Dnvg__allocVerts(D3D, maxverts);
+	if (offset == -1) goto error;
+
+	for (i = 0; i < npaths; i++) {
+		struct D3DNVGpath* copy = &D3D->paths[call->pathOffset + i];
+		const struct NVGpath* path = &paths[i];
+		memset(copy, 0, sizeof(struct D3DNVGpath));
+		if (path->nstroke) {
+			copy->strokeOffset = offset;
+			copy->strokeCount = path->nstroke;
+			memcpy(&D3D->verts[offset], path->stroke, sizeof(struct NVGvertex) * path->nstroke);
+			offset += path->nstroke;
+		}
+	}
+
+	if (D3D->flags & NVG_STENCIL_STROKES) {
+		// Fill shader
+		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 2);
+		if (call->uniformOffset == -1) goto error;
+
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f/255.0f);
+
+	} else {
+		// Fill shader
+		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 1);
+		if (call->uniformOffset == -1) goto error;
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
+	}
+
+	return;
+
+error:
+	// We get here if call alloc was ok, but something else is not.
+	// Roll back the last call to prevent drawing it.
+	if (D3D->ncalls > 0) D3D->ncalls--;
+}
+
+static void D3Dnvg__renderTriangles(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor,
+								   const struct NVGvertex* verts, int nverts)
+{
+	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
+	struct D3DNVGcall* call = D3Dnvg__allocCall(D3D);
+	struct D3DNVGfragUniforms* frag;
+
+	if (call == NULL) return;
+
+	call->type = D3DNVG_TRIANGLES;
+	call->image = paint->image;
+
+	// Allocate vertices for all the paths.
+	call->triangleOffset = D3Dnvg__allocVerts(D3D, nverts);
+	if (call->triangleOffset == -1) goto error;
+	call->triangleCount = nverts;
+
+	memcpy(&D3D->verts[call->triangleOffset], verts, sizeof(struct NVGvertex) * nverts);
+
+	// Fill shader
+	call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 1);
+	if (call->uniformOffset == -1) goto error;
+	frag = nvg__fragUniformPtr(D3D, call->uniformOffset);
+	D3Dnvg__convertPaint(D3D, frag, paint, scissor, 1.0f, 1.0f, -1.0f);
+	frag->type = NSVG_SHADER_IMG;
+
+	return;
+
+error:
+	// We get here if call alloc was ok, but something else is not.
+	// Roll back the last call to prevent drawing it.
+	if (D3D->ncalls > 0) D3D->ncalls--;
 }
 
 static void D3Dnvg__renderDelete(void* uptr)
@@ -1084,8 +1590,11 @@ static void D3Dnvg__renderDelete(void* uptr)
 
     for (i = 0; i < D3D->ntextures; i++) 
     {
-        D3D_API_RELEASE(D3D->textures[i].tex);
-        D3D_API_RELEASE(D3D->textures[i].resourceView);
+        if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVD3D_TEXTURE_NODELETE) == 0)
+        {
+            D3D_API_RELEASE(D3D->textures[i].tex);
+            D3D_API_RELEASE(D3D->textures[i].resourceView);
+        }
     }
     D3D_API_RELEASE(D3D->pSamplerState);
 
@@ -1113,11 +1622,16 @@ static void D3Dnvg__renderDelete(void* uptr)
     
     free(D3D->textures);
 
+    free(D3D->paths);
+    free(D3D->verts);
+    free(D3D->uniforms);
+    free(D3D->calls);
+    
     free(D3D);
 }
 
 
-struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash, int edgeaa)
+struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash, int flags)
 {
     struct NVGparams params;
     struct NVGcontext* ctx = NULL;
@@ -1145,9 +1659,9 @@ struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash,
     params.userPtr = D3D;
     params.atlasWidth = atlasw;
     params.atlasHeight = atlash;
-    params.edgeAntiAlias = edgeaa;
+    params.edgeAntiAlias = flags & NVG_ANTIALIAS ? 1 : 0;
 
-    D3D->edgeAntiAlias = edgeaa;
+    D3D->flags = flags;
 
     ctx = nvgCreateInternal(&params);
     if (ctx == NULL) goto error;
@@ -1163,6 +1677,43 @@ error:
 void nvgDeleteD3D11(struct NVGcontext* ctx)
 {
     nvgDeleteInternal(ctx);
+}
+
+int nvd3dCreateImageFromHandle(struct NVGcontext* ctx, void* textureId, int w, int h, int flags)
+{
+
+    /*struct D3DNVGcontext* gl = (struct D3DNVGcontext*)nvgInternalParams(ctx)->userPtr;
+	struct D3DNVGtexture* tex = D3Dnvg__allocTexture(gl);
+
+	if (tex == NULL) return 0;
+
+	tex->type = NVG_TEXTURE_RGBA;
+	tex->tex = textureId;
+	tex->flags = flags;
+	tex->width = w;
+	tex->height = h;
+
+	return tex->id;
+    */
+    return 0;
+}
+
+unsigned int nvd3dImageHandle(struct NVGcontext* ctx, int image)
+{
+    /*
+	struct D3DNVGcontext* gl = (struct D3DNVGcontext*)nvgInternalParams(ctx)->userPtr;
+	struct D3DNVGtexture* tex = D3Dnvg__findTexture(gl, image);
+	return tex->tex;*/
+    return 0;
+}
+
+void nvd3dImageFlags(struct NVGcontext* ctx, int image, int flags)
+{
+    /*
+	struct D3DNVGcontext* gl = (struct D3DNVGcontext*)nvgInternalParams(ctx)->userPtr;
+	struct D3DNVGtexture* tex = D3Dnvg__findTexture(gl, image);
+	tex->flags = flags;
+    */
 }
 
 #endif //NANOVG_D3D11_IMPLEMENTATION

@@ -83,11 +83,6 @@ enum NVGalign {
 	NVG_ALIGN_BASELINE	= 1<<6, // Default, align text vertically to baseline. 
 };
 
-enum NVGalpha {
-	NVG_STRAIGHT_ALPHA,
-	NVG_PREMULTIPLIED_ALPHA,
-};
-
 struct NVGglyphPosition {
 	const char* str;	// Position of the glyph in the input string.
 	float x;			// The x-coordinate of the logical glyph position.
@@ -111,11 +106,7 @@ struct NVGtextRow {
 // For example, GLFW returns two dimension for an opened window: window size and
 // frame buffer size. In that case you would set windowWidth/Height to the window size
 // devicePixelRatio to: frameBufferWidth / windowWidth.
-// AlphaBlend controls if drawing the shapes to the render target should be done using straight or
-// premultiplied alpha. If rendering directly to framebuffer you probably want to use NVG_STRAIGHT_ALPHA,
-// if rendering to texture which should contain transparent regions NVG_PREMULTIPLIED_ALPHA is the
-// right choice.
-void nvgBeginFrame(struct NVGcontext* ctx, int windowWidth, int windowHeight, float devicePixelRatio, int alphaBlend);
+void nvgBeginFrame(struct NVGcontext* ctx, int windowWidth, int windowHeight, float devicePixelRatio);
 
 // Ends drawing flushing remaining render state.
 void nvgEndFrame(struct NVGcontext* ctx);
@@ -400,8 +391,11 @@ void nvgMoveTo(struct NVGcontext* ctx, float x, float y);
 // Adds line segment from the last point in the path to the specified point.
 void nvgLineTo(struct NVGcontext* ctx, float x, float y);
 
-// Adds bezier segment from last point in the path via two control points to the specified point.
+// Adds cubic bezier segment from last point in the path via two control points to the specified point.
 void nvgBezierTo(struct NVGcontext* ctx, float c1x, float c1y, float c2x, float c2y, float x, float y);
+
+// Adds quadratic bezier segment from last point in the path via a control point to the specified point.
+void nvgQuadTo(struct NVGcontext* ctx, float cx, float cy, float x, float y);
 
 // Adds an arc segment at the corner defined by the last path point, and two specified points.
 void nvgArcTo(struct NVGcontext* ctx, float x1, float y1, float x2, float y2, float radius);
@@ -573,8 +567,8 @@ struct NVGparams {
 	int (*renderDeleteTexture)(void* uptr, int image);
 	int (*renderUpdateTexture)(void* uptr, int image, int x, int y, int w, int h, const unsigned char* data);
 	int (*renderGetTextureSize)(void* uptr, int image, int* w, int* h);
-	void (*renderViewport)(void* uptr, int width, int height, int alphaBlend);
-	void (*renderFlush)(void* uptr, int alphaBlend);
+	void (*renderViewport)(void* uptr, int width, int height);
+	void (*renderFlush)(void* uptr);
 	void (*renderFill)(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe, const float* bounds, const struct NVGpath* paths, int npaths);
 	void (*renderStroke)(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe, float strokeWidth, const struct NVGpath* paths, int npaths);
 	void (*renderTriangles)(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, const struct NVGvertex* verts, int nverts);
@@ -590,7 +584,7 @@ struct NVGparams* nvgInternalParams(struct NVGcontext* ctx);
 // Debug function to dump cached path data.
 void nvgDebugDumpPathCache(struct NVGcontext* ctx);
 
-#define NVG_NOTUSED(v) ((void*)&v)
+#define NVG_NOTUSED(v) for (;;) { (void)(1 ? (void)0 : ( (void)(v) ) ); break; }
 
 #ifdef __cplusplus
 }

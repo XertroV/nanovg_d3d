@@ -106,7 +106,6 @@ struct NVGcontext {
 	float devicePxRatio;
 	struct FONScontext* fs;
 	int fontImage;
-	int alphaBlend;
 	int drawCallCount;
 	int fillTriCount;
 	int strokeTriCount;
@@ -152,7 +151,7 @@ static void nvg__deletePathCache(struct NVGpathCache* c)
 	free(c);
 }
 
-static struct NVGpathCache* nvg__allocPathCache()
+static struct NVGpathCache* nvg__allocPathCache(void)
 {
 	struct NVGpathCache* c = (struct NVGpathCache*)malloc(sizeof(struct NVGpathCache));
 	if (c == NULL) goto error;
@@ -200,8 +199,6 @@ struct NVGcontext* nvgCreateInternal(struct NVGparams* params)
 	if (!ctx->commands) goto error;
 	ctx->ncommands = 0;
 	ctx->ccommands = NVG_INIT_COMMANDS_SIZE;
-
-	ctx->alphaBlend = NVG_STRAIGHT_ALPHA;
 
 	ctx->cache = nvg__allocPathCache();
 	if (ctx->cache == NULL) goto error;
@@ -257,7 +254,7 @@ void nvgDeleteInternal(struct NVGcontext* ctx)
 	free(ctx);
 }
 
-void nvgBeginFrame(struct NVGcontext* ctx, int windowWidth, int windowHeight, float devicePixelRatio, int alphaBlend)
+void nvgBeginFrame(struct NVGcontext* ctx, int windowWidth, int windowHeight, float devicePixelRatio)
 {
 /*	printf("Tris: draws:%d  fill:%d  stroke:%d  text:%d  TOT:%d\n",
 		ctx->drawCallCount, ctx->fillTriCount, ctx->strokeTriCount, ctx->textTriCount,
@@ -268,9 +265,8 @@ void nvgBeginFrame(struct NVGcontext* ctx, int windowWidth, int windowHeight, fl
 	nvgReset(ctx);
 
 	nvg__setDevicePixelRatio(ctx, devicePixelRatio);
-	ctx->alphaBlend = alphaBlend;
 	
-	ctx->params.renderViewport(ctx->params.userPtr, windowWidth, windowHeight, ctx->alphaBlend);
+	ctx->params.renderViewport(ctx->params.userPtr, windowWidth, windowHeight);
 
 	ctx->drawCallCount = 0;
 	ctx->fillTriCount = 0;
@@ -280,7 +276,7 @@ void nvgBeginFrame(struct NVGcontext* ctx, int windowWidth, int windowHeight, fl
 
 void nvgEndFrame(struct NVGcontext* ctx)
 {
-	ctx->params.renderFlush(ctx->params.userPtr, ctx->alphaBlend);
+	ctx->params.renderFlush(ctx->params.userPtr);
 }
 
 struct NVGcolor nvgRGB(unsigned char r, unsigned char g, unsigned char b)
@@ -1295,7 +1291,6 @@ static struct NVGvertex* nvg__bevelJoin(struct NVGvertex* dst, struct NVGpoint* 
 {
 	float rx0,ry0,rx1,ry1;
 	float lx0,ly0,lx1,ly1;
-	float mx,my,len,mu;
 	float dlx0 = p0->dy;
 	float dly0 = -p0->dx;
 	float dlx1 = p1->dy;
@@ -1309,12 +1304,6 @@ static struct NVGvertex* nvg__bevelJoin(struct NVGvertex* dst, struct NVGpoint* 
 		nvg__vset(dst, p1->x - dlx0*rw, p1->y - dly0*rw, ru,1); dst++;
 
 		if (p1->flags & NVG_PT_BEVEL) {
-			// TODO: this needs more work.
-			mx = (dlx0 + dlx1) * 0.5f;
-			my = (dly0 + dly1) * 0.5f;
-			len = sqrtf(mx*mx + my*my);
-			mu = ru + len*(lu-ru)*0.5f;
-
 			nvg__vset(dst, lx0, ly0, lu,1); dst++;
 			nvg__vset(dst, p1->x - dlx0*rw, p1->y - dly0*rw, ru,1); dst++;
 
@@ -1344,12 +1333,6 @@ static struct NVGvertex* nvg__bevelJoin(struct NVGvertex* dst, struct NVGpoint* 
 		nvg__vset(dst, rx0, ry0, ru,1); dst++;
 
 		if (p1->flags & NVG_PT_BEVEL) {
-			// TODO: this needs more work.
-			mx = (dlx0 + dlx1) * 0.5f;
-			my = (dly0 + dly1) * 0.5f;
-			len = sqrtf(mx*mx + my*my);
-			mu = lu + len*(ru-lu)*0.5f;
-
 			nvg__vset(dst, p1->x + dlx0*lw, p1->y + dly0*lw, lu,1); dst++;
 			nvg__vset(dst, rx0, ry0, ru,1); dst++;
 
@@ -1450,7 +1433,7 @@ static void nvg__calculateJoins(struct NVGcontext* ctx, float w, int lineJoin, f
 {
 	struct NVGpathCache* cache = ctx->cache;
 	int i, j;
-	float iw = 1.0f;
+	float iw = 0.0f;
 
 	if (w > 0.0f) iw = 1.0f / w;
 
@@ -1523,7 +1506,7 @@ static int nvg__expandStroke(struct NVGcontext* ctx, float w, int lineCap, int l
 	struct NVGvertex* dst;
 	int cverts, i, j;
 	float aa = ctx->fringeWidth;
-	int ncap = nvg__curveDivs(w, NVG_PI, ctx->tessTol / 4.0f);
+	int ncap = nvg__curveDivs(w, NVG_PI, ctx->tessTol);	// Calculate divisions per half circle.
 
 	nvg__calculateJoins(ctx, w, lineJoin, miterLimit);
 
@@ -1775,6 +1758,17 @@ void nvgBezierTo(struct NVGcontext* ctx, float c1x, float c1y, float c2x, float 
 {
 	float vals[] = { NVG_BEZIERTO, c1x, c1y, c2x, c2y, x, y };
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
+}
+
+void nvgQuadTo(struct NVGcontext* ctx, float cx, float cy, float x, float y)
+{
+    float x0 = ctx->commandx;
+    float y0 = ctx->commandy;
+    float vals[] = { NVG_BEZIERTO, 
+        x0 + 2.0f/3.0f*(cx - x0), y0 + 2.0f/3.0f*(cy - y0),
+        x + 2.0f/3.0f*(cx - x), y + 2.0f/3.0f*(cy - y),
+        x, y };
+    nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
 }
 
 void nvgArcTo(struct NVGcontext* ctx, float x1, float y1, float x2, float y2, float radius)
