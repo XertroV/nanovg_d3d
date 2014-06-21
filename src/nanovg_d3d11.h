@@ -586,7 +586,7 @@ static int D3Dnvg__renderCreate(void* uptr)
     return 1;
 }
 
-static int D3Dnvg__renderCreateTexture(void* uptr, int type, int w, int h, const unsigned char* data)
+static int D3Dnvg__renderCreateTexture(void* uptr, int type, int w, int h, int imageFlags, const unsigned char* data)
 {
     struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
     struct D3DNVGtexture* tex = D3Dnvg__allocTexture(D3D);
@@ -608,15 +608,19 @@ static int D3Dnvg__renderCreateTexture(void* uptr, int type, int w, int h, const
     texDesc.ArraySize = 1;
     texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     texDesc.CPUAccessFlags = 0;
+    texDesc.MipLevels = 1;
     if (type == NVG_TEXTURE_RGBA)
     {
         texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         pixelWidthBytes = 4;
 
         // Mip maps
-        texDesc.MipLevels = 0;
-        texDesc.BindFlags |= D3D11_BIND_RENDER_TARGET;
-        texDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+        if (imageFlags & NVG_IMAGE_GENERATE_MIPMAPS)
+        {
+            texDesc.MipLevels = 0;
+            texDesc.BindFlags |= D3D11_BIND_RENDER_TARGET;
+            texDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+        }
     }
     else
     {
