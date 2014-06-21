@@ -126,7 +126,7 @@ void Draw()
     // Ration 1/1 for now.  Not sure how to support retina on Windows.
     pxRatio = 1.0f;
 
-    nvgBeginFrame(vg, xWin, yWin, pxRatio, premult ? NVG_PREMULTIPLIED_ALPHA : NVG_STRAIGHT_ALPHA);
+    nvgBeginFrame(vg, xWin, yWin, pxRatio);
 
     renderDemo(vg, (float)xm, (float)ym, (float)xWin, (float)yWin, (float)t, blowup, &data);
 
@@ -286,9 +286,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     }
     
 #ifdef DEMO_MSAA
-	vg = nvgCreateD3D11(pDevice, 512, 512, 0);
+	vg = nvgCreateD3D11(pDevice, 512, 512, NVG_STENCIL_STROKES);
 #else
-	vg = nvgCreateD3D11(pDevice, 512, 512, NVG_ANTIALIAS);
+	vg = nvgCreateD3D11(pDevice, 512, 512, NVG_ANTIALIAS | NVG_STENCIL_STROKES);
 #endif
 	if (vg == NULL) 
     {
@@ -368,12 +368,12 @@ void UnInitializeDX()
         ID3D11DeviceContext_OMSetRenderTargets(pDeviceContext, 1, viewList, NULL);
     }
 
-    SAFE_RELEASE(pDeviceContext);
-    SAFE_RELEASE(pDevice);
-    SAFE_RELEASE(pSwapChain);
-    SAFE_RELEASE(pRenderTargetView);
-    SAFE_RELEASE(pDepthStencil);
-    SAFE_RELEASE(pDepthStencilView);
+    D3D_API_RELEASE(pDeviceContext);
+    D3D_API_RELEASE(pDevice);
+    D3D_API_RELEASE(pSwapChain);
+    D3D_API_RELEASE(pRenderTargetView);
+    D3D_API_RELEASE(pDepthStencil);
+    D3D_API_RELEASE(pDepthStencilView);
 }
 
 // Setup the device and the rendering targets
@@ -487,9 +487,9 @@ BOOL InitializeDX(unsigned int x, unsigned int y)
 #endif
     }
 
-    SAFE_RELEASE(pDXGIDevice);
-    SAFE_RELEASE(pAdapter);
-    SAFE_RELEASE(pDXGIFactory);
+    D3D_API_RELEASE(pDXGIDevice);
+    D3D_API_RELEASE(pAdapter);
+    D3D_API_RELEASE(pDXGIFactory);
 
     if (SUCCEEDED(hr))
     {
@@ -528,8 +528,8 @@ HRESULT ResizeWindow(unsigned int x, unsigned int y)
     ID3D11DeviceContext_OMSetRenderTargets(pDeviceContext, 1, viewList, NULL);
 
     // Ensure that nobody is holding onto one of the old resources
-    SAFE_RELEASE(pRenderTargetView);
-    SAFE_RELEASE(pDepthStencilView);
+    D3D_API_RELEASE(pRenderTargetView);
+    D3D_API_RELEASE(pDepthStencilView);
 
     // Resize render target buffers
     hr = IDXGISwapChain_ResizeBuffers(pSwapChain, 1, x, y, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
@@ -554,7 +554,7 @@ HRESULT ResizeWindow(unsigned int x, unsigned int y)
     renderDesc.Texture2D.MipSlice = 0;
 
     hr = ID3D11Device_CreateRenderTargetView(pDevice, pBackBufferResource, &renderDesc, &pRenderTargetView);
-    SAFE_RELEASE(pBackBufferResource);
+    D3D_API_RELEASE(pBackBufferResource);
     if (FAILED(hr))
     {
         return hr;
@@ -572,7 +572,7 @@ HRESULT ResizeWindow(unsigned int x, unsigned int y)
     texDesc.SampleDesc.Quality = swapDesc.SampleDesc.Quality;
     texDesc.Usage = D3D11_USAGE_DEFAULT;
 
-    SAFE_RELEASE(pDepthStencil);
+    D3D_API_RELEASE(pDepthStencil);
     hr = ID3D11Device_CreateTexture2D(pDevice, &texDesc, NULL, &pDepthStencil);
     if (FAILED(hr))
     {

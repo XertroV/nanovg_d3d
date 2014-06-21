@@ -44,9 +44,12 @@ enum NVD3Dtextureflags {
     NVD3D_TEXTURE_PREMULTIPLIED = 0x04
 };
 
+// Not done yet.  Simple enough to do though...
+#ifdef IMPLEMENTED_IMAGE_FUNCS
 int nvd3dCreateImageFromHandle(struct NVGcontext* ctx, void* texture, int w, int h, int flags);
 unsigned int nvd3dImageHandle(struct NVGcontext* ctx, int image);
 void nvd3dImageFlags(struct NVGcontext* ctx, int image, int flags);
+#endif
 
 #ifdef __cplusplus
 }
@@ -461,7 +464,9 @@ static int D3Dnvg__renderCreate(void* uptr)
             return 0;
     }
 
-    D3D->VertexBuffer.MaxBufferEntries = 10000;
+    // Todo: Need to find a good value for this, and
+    // Use the dynamic buffer fill technnique to handle overflow
+    D3D->VertexBuffer.MaxBufferEntries = 20000;
     D3D->VertexBuffer.CurrentBufferEntry = 0;
 
     memset(&bufferDesc, 0, sizeof(bufferDesc));
@@ -741,7 +746,7 @@ static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUnif
     frag->innerCol = D3Dnvg__premulColor(paint->innerColor);
     frag->outerCol = D3Dnvg__premulColor(paint->outerColor);
     
-    if (scissor->extent[0] < 0.5f || scissor->extent[1] < 0.5f) 
+    if (scissor->extent[0] < -0.5f || scissor->extent[1] < -0.5f) 
     {
         memset(scissorMat, 0, sizeof(scissorMat));
         frag->scissorExt[0] = 1.0f;
@@ -1400,6 +1405,7 @@ void nvgDeleteD3D11(struct NVGcontext* ctx)
     nvgDeleteInternal(ctx);
 }
 
+#ifdef IMPLEMENTED_IMAGE_FUNCS
 int nvd3dCreateImageFromHandle(struct NVGcontext* ctx, void* textureId, int w, int h, int flags)
 {
 
@@ -1436,6 +1442,7 @@ void nvd3dImageFlags(struct NVGcontext* ctx, int image, int flags)
 	tex->flags = flags;
     */
 }
+#endif
 
 #endif //NANOVG_D3D11_IMPLEMENTATION
 #endif //NANOVG_D3D11_H
