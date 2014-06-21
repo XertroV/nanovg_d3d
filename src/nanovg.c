@@ -24,6 +24,12 @@
 #define STBI_HEADER_FILE_ONLY
 #include "stb_image.c"
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4100)  // unreferenced formal parameter
+#pragma warning(disable: 4127)  // conditional expression is constant
+#pragma warning(disable: 4204)  // nonstandard extension used : non-constant aggregate initializer
+#pragma warning(disable: 4706)  // assignment within conditional expression
+#endif
 
 #define NVG_INIT_COMMANDS_SIZE 256
 #define NVG_INIT_POINTS_SIZE 128
@@ -519,8 +525,8 @@ void nvgReset(struct NVGcontext* ctx)
 	state->alpha = 1.0f;
 	nvgTransformIdentity(state->xform);
 
-	state->scissor.extent[0] = 0.0f;
-	state->scissor.extent[1] = 0.0f;
+	state->scissor.extent[0] = -1.0f;
+	state->scissor.extent[1] = -1.0f;
 
 	state->fontSize = 16.0f;
 	state->letterSpacing = 0.0f;
@@ -815,6 +821,9 @@ void nvgScissor(struct NVGcontext* ctx, float x, float y, float w, float h)
 {
 	struct NVGstate* state = nvg__getState(ctx);
 
+	w = nvg__maxf(0.0f, w);
+	h = nvg__maxf(0.0f, h);
+
 	nvgTransformIdentity(state->scissor.xform);
 	state->scissor.xform[4] = x+w*0.5f;
 	state->scissor.xform[5] = y+h*0.5f;
@@ -828,8 +837,8 @@ void nvgResetScissor(struct NVGcontext* ctx)
 {
 	struct NVGstate* state = nvg__getState(ctx);
 	memset(state->scissor.xform, 0, sizeof(state->scissor.xform));
-	state->scissor.extent[0] = 0;
-	state->scissor.extent[1] = 0;
+	state->scissor.extent[0] = -1.0f;
+	state->scissor.extent[1] = -1.0f;
 }
 
 static int nvg__ptEquals(float x1, float y1, float x2, float y2, float tol)
@@ -977,7 +986,7 @@ static void nvg__addPoint(struct NVGcontext* ctx, float x, float y, int flags)
 	memset(pt, 0, sizeof(*pt));
 	pt->x = x;
 	pt->y = y;
-	pt->flags = flags;
+	pt->flags = (unsigned char)flags;
 
 	ctx->cache->npoints++;
 	path->count++;
