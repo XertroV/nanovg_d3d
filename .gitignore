@@ -31,3 +31,5 @@ src/GL/glxew.h
 src/GL/wglew.h
 src/GLFW/glfw3.h
 src/GLFW/glfw3native.h
+src/D3D11PixelShaderNoAA.h
+src/D3D11PixelShaderAA.h
