@@ -286,9 +286,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     }
     
 #ifdef DEMO_MSAA
-	vg = nvgCreateD3D11(pDevice, 512, 512, NVG_STENCIL_STROKES);
+	vg = nvgCreateD3D11(pDevice, NVG_STENCIL_STROKES);
 #else
-	vg = nvgCreateD3D11(pDevice, 512, 512, NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+	vg = nvgCreateD3D11(pDevice, NVG_ANTIALIAS | NVG_STENCIL_STROKES);
 #endif
 	if (vg == NULL) 
     {

@@ -35,7 +35,7 @@ extern "C" {
 // slower, but path overlaps (i.e. self-intersecting or sharp turns) will be drawn just once.
 #define NVG_STENCIL_STROKES 2
 
-struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash, int edgeaa);
+struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int edgeaa);
 void nvgDeleteD3D11(struct NVGcontext* ctx);
 
 enum NVD3Dtextureflags {
@@ -1361,7 +1361,7 @@ static void D3Dnvg__renderDelete(void* uptr)
 }
 
 
-struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash, int flags)
+struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int flags)
 {
     struct NVGparams params;
     struct NVGcontext* ctx = NULL;
@@ -1387,8 +1387,6 @@ struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int atlasw, int atlash,
     params.renderTriangles = D3Dnvg__renderTriangles;
     params.renderDelete = D3Dnvg__renderDelete;
     params.userPtr = D3D;
-    params.atlasWidth = atlasw;
-    params.atlasHeight = atlash;
     params.edgeAntiAlias = flags & NVG_ANTIALIAS ? 1 : 0;
 
     D3D->flags = flags;
