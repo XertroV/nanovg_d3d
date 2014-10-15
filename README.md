@@ -43,7 +43,7 @@ Calling `nvgBeginPath()` will clear any existing paths and start drawing from bl
 
 ## Understanding Composite Paths
 
-Because of the way the rendering backend is build in NanoVG, drawing a composite path, that is path consisting from multiple paths defining holes and fills, is a bit more involved. NanoVG uses even-odd filling rule and by default the paths are wound in counter clockwise order. Keep that in mind when drawing using the low level draw API. In order to wind one of the predefined shapes as a hole, you should call nvgPathWinding(vg, `NVG_HOLE`), or `nvgPathWinding(vg, NVG_CV)` _after_ defining the path.
+Because of the way the rendering backend is build in NanoVG, drawing a composite path, that is path consisting from multiple paths defining holes and fills, is a bit more involved. NanoVG uses even-odd filling rule and by default the paths are wound in counter clockwise order. Keep that in mind when drawing using the low level draw API. In order to wind one of the predefined shapes as a hole, you should call `nvgPathWinding(vg, NVG_HOLE)`, or `nvgPathWinding(vg, NVG_CW)` _after_ defining the path.
 
 ``` C
 nvgBeginPath(vg);
@@ -97,6 +97,10 @@ See the header file [nanovg.h](/src/nanovg.h) for API reference.
 
 - [DX11 port](https://github.com/cmaughan/nanovg) by [Chris Maughan](https://github.com/cmaughan)
 - [bgfx port](https://github.com/bkaradzic/bgfx/tree/master/examples/20-nanovg) by [Branimir Karadžić](https://github.com/bkaradzic) 
+
+## Projects using NanoVG
+
+- [Processing API simulation by vinjn](https://github.com/vinjn/island/blob/master/examples/01-processing/sketch2d.h)
 
 ## License
 The library is licensed under [zlib license](LICENSE.txt)
