@@ -1005,6 +1005,14 @@ static void D3Dnvg__triangles(struct D3DNVGcontext* D3D, struct D3DNVGcall* call
     D3D_API_2(D3D->pDeviceContext, Draw, call->triangleCount, call->triangleOffset);
 }
 
+static void D3Dnvg__renderCancel(void* uptr) 
+{
+	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
+    D3D->nverts = 0;
+	D3D->npaths = 0;
+	D3D->ncalls = 0;
+	D3D->nuniforms = 0;
+}
 
 static void D3Dnvg__renderFlush(void* uptr)
 {
@@ -1381,6 +1389,7 @@ struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int flags)
     params.renderUpdateTexture = D3Dnvg__renderUpdateTexture;
     params.renderGetTextureSize = D3Dnvg__renderGetTextureSize;
     params.renderViewport = D3Dnvg__renderViewport;
+    params.renderCancel = D3Dnvg__renderCancel;
     params.renderFlush = D3Dnvg__renderFlush;
     params.renderFill = D3Dnvg__renderFill;
     params.renderStroke = D3Dnvg__renderStroke;
