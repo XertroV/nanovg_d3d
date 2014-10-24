@@ -38,10 +38,9 @@ extern "C" {
 struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int edgeaa);
 void nvgDeleteD3D11(struct NVGcontext* ctx);
 
-enum NVD3Dtextureflags {
-    NVD3D_TEXTURE_FLIP_Y = 0x01,
-    NVD3D_TEXTURE_NODELETE = 0x02,
-    NVD3D_TEXTURE_PREMULTIPLIED = 0x04
+// These are additional flags on top of NVGimageFlags.
+enum NVGimageFlagsD3D11 {
+	NVG_IMAGE_NODELETE			= 1<<16,	// Do not delete texture object.
 };
 
 // Not done yet.  Simple enough to do though...
@@ -267,7 +266,7 @@ static int D3Dnvg__deleteTexture(struct D3DNVGcontext* D3D, int id)
     int i;
     for (i = 0; i < D3D->ntextures; i++) {
         if (D3D->textures[i].id == id) {
-            if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVD3D_TEXTURE_NODELETE) == 0)
+            if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVG_IMAGE_NODELETE) == 0)
             {
                 D3D_API_RELEASE(D3D->textures[i].tex);
                 D3D_API_RELEASE(D3D->textures[i].resourceView);
@@ -797,7 +796,7 @@ static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUnif
             return 0;
         }
         
-        if ((tex->flags & NVD3D_TEXTURE_FLIP_Y) != 0) 
+        if ((tex->flags & NVG_IMAGE_FLIPY) != 0) 
         {
 			float flipped[6];
 			nvgTransformScale(flipped, 1.0f, -1.0f);
@@ -812,7 +811,7 @@ static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUnif
         
 		if (tex->type == NVG_TEXTURE_RGBA)
         {
-			frag->texType = (tex->flags & NVD3D_TEXTURE_PREMULTIPLIED) ? 0 : 1;
+			frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0 : 1;
         }
         else
         {
@@ -1350,7 +1349,7 @@ static void D3Dnvg__renderDelete(void* uptr)
 
     for (i = 0; i < D3D->ntextures; i++) 
     {
-        if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVD3D_TEXTURE_NODELETE) == 0)
+        if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVG_IMAGE_NODELETE) == 0)
         {
             D3D_API_RELEASE(D3D->textures[i].tex);
             D3D_API_RELEASE(D3D->textures[i].resourceView);
