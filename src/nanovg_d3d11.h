@@ -38,10 +38,9 @@ extern "C" {
 struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int edgeaa);
 void nvgDeleteD3D11(struct NVGcontext* ctx);
 
-enum NVD3Dtextureflags {
-    NVD3D_TEXTURE_FLIP_Y = 0x01,
-    NVD3D_TEXTURE_NODELETE = 0x02,
-    NVD3D_TEXTURE_PREMULTIPLIED = 0x04
+// These are additional flags on top of NVGimageFlags.
+enum NVGimageFlagsD3D11 {
+	NVG_IMAGE_NODELETE			= 1<<16,	// Do not delete texture object.
 };
 
 // Not done yet.  Simple enough to do though...
@@ -178,7 +177,7 @@ struct D3DNVGcontext {
     int ntextures;
     int ctextures;
     int textureId;
-    ID3D11SamplerState* pSamplerState;
+    ID3D11SamplerState* pSamplerState[4];
 
     int fragSize;
     int flags;
@@ -267,7 +266,7 @@ static int D3Dnvg__deleteTexture(struct D3DNVGcontext* D3D, int id)
     int i;
     for (i = 0; i < D3D->ntextures; i++) {
         if (D3D->textures[i].id == id) {
-            if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVD3D_TEXTURE_NODELETE) == 0)
+            if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVG_IMAGE_NODELETE) == 0)
             {
                 D3D_API_RELEASE(D3D->textures[i].tex);
                 D3D_API_RELEASE(D3D->textures[i].resourceView);
@@ -573,15 +572,27 @@ static int D3Dnvg__renderCreate(void* uptr)
 
     ZeroMemory(&sampDesc, sizeof(sampDesc));
     sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-    sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
     sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
     sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     sampDesc.MinLOD = 0;
     sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
     sampDesc.MipLODBias = 0.0f;//-1.0f;
 
-    D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pSamplerState);
+    sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pSamplerState[0]);
+
+    sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+	D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pSamplerState[1]);
+
+    sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pSamplerState[2]);
+
+    sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pSamplerState[3]);
     
     return 1;
 }
@@ -603,6 +614,7 @@ static int D3Dnvg__renderCreateTexture(void* uptr, int type, int w, int h, int i
     tex->width = w;
     tex->height = h;
     tex->type = type;
+	tex->flags = imageFlags;
 
     memset(&texDesc, 0, sizeof(texDesc));
     texDesc.ArraySize = 1;
@@ -784,7 +796,7 @@ static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUnif
             return 0;
         }
         
-        if ((tex->flags & NVD3D_TEXTURE_FLIP_Y) != 0) 
+        if ((tex->flags & NVG_IMAGE_FLIPY) != 0) 
         {
 			float flipped[6];
 			nvgTransformScale(flipped, 1.0f, -1.0f);
@@ -799,7 +811,7 @@ static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUnif
         
 		if (tex->type == NVG_TEXTURE_RGBA)
         {
-			frag->texType = (tex->flags & NVD3D_TEXTURE_PREMULTIPLIED) ? 0 : 1;
+			frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0 : 1;
         }
         else
         {
@@ -1030,7 +1042,6 @@ static void D3Dnvg__renderFlush(void* uptr)
 
         D3D_API_3(D3D->pDeviceContext, PSSetShader, D3D->shader.frag, NULL, 0);
         D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->shader.vert, NULL, 0);
-        D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pSamplerState);
 
          // Draw shapes
         D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, D3D->pDepthStencilDefault, 0);
@@ -1040,6 +1051,15 @@ static void D3Dnvg__renderFlush(void* uptr)
        
 		for (i = 0; i < D3D->ncalls; i++) {
 			struct D3DNVGcall* call = &D3D->calls[i];
+			
+			if (call->image != 0)
+			{
+				struct D3DNVGtexture* tex = D3Dnvg__findTexture(D3D, call->image);
+				if (tex != NULL)
+				{
+					D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pSamplerState[(tex->flags & NVG_IMAGE_REPEATX ? 1 : 0) + (tex->flags & NVG_IMAGE_REPEATY ? 2 : 0)]);
+				}
+			}
             
 			if (call->type == D3DNVG_FILL)
 				D3Dnvg__fill(D3D, call);
@@ -1329,13 +1349,16 @@ static void D3Dnvg__renderDelete(void* uptr)
 
     for (i = 0; i < D3D->ntextures; i++) 
     {
-        if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVD3D_TEXTURE_NODELETE) == 0)
+        if (D3D->textures[i].tex != 0 && (D3D->textures[i].flags & NVG_IMAGE_NODELETE) == 0)
         {
             D3D_API_RELEASE(D3D->textures[i].tex);
             D3D_API_RELEASE(D3D->textures[i].resourceView);
         }
     }
-    D3D_API_RELEASE(D3D->pSamplerState);
+    for (i = 0; i < 4; i++)
+	{
+		D3D_API_RELEASE(D3D->pSamplerState[i]);
+	}
 
     D3D_API_RELEASE(D3D->VertexBuffer.pBuffer);
 
