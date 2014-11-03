@@ -5,7 +5,7 @@
 #ifdef NANOVG_GLEW
 #  include <GL/glew.h>
 #endif
-#ifndef NANOVG_D3D11
+#if !defined(NANOVG_D3D11) && !defined(NANOVG_D3D9)
 #include <GLFW/glfw3.h>
 #endif
 #include "nanovg.h"
@@ -1205,7 +1205,7 @@ static void flipHorizontal(unsigned char* image, int w, int h, int stride)
 	}
 }
 
-#ifndef NANOVG_D3D11
+#if !defined(NANOVG_D3D11) && !defined(NANOVG_D3D9)
 void saveScreenShot(int w, int h, int premult, const char* name)
 {
 	unsigned char* image = (unsigned char*)malloc(w*h*4);

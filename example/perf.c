@@ -5,7 +5,7 @@
 #ifdef NANOVG_GLEW
 #  include <GL/glew.h>
 #endif
-#ifndef NANOVG_D3D11
+#if !defined(NANOVG_D3D11) && !defined(NANOVG_D3D9)
 #include <GLFW/glfw3.h>
 #endif
 #include "nanovg.h"
@@ -16,7 +16,7 @@
 #include <iconv.h>
 #endif
 
-#ifndef NANOVG_D3D11
+#if !defined(NANOVG_D3D11) && !defined(NANOVG_D3D9)
 // timer query support
 #ifndef GL_ARB_timer_query
 #define GL_TIME_ELAPSED                   0x88BF
