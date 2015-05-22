@@ -943,12 +943,15 @@ static void D3Dnvg__convexFill(struct D3DNVGcontext* D3D, struct D3DNVGcall* cal
 	for (i = 0; i < npaths; i++)
     {
         // Draws a fan using indices to fake it up, since there isn't a fan primitive in D3D11.
-        unsigned int numIndices = ((paths[i].fillCount - 2) * 3);
-        assert(numIndices < D3D->VertexBuffer.MaxBufferEntries);
-        if (numIndices < D3D->VertexBuffer.MaxBufferEntries)
-        {
-            D3D_API_3(D3D->pDeviceContext, DrawIndexed, numIndices, 0, paths[i].fillOffset);        
-        }
+		if (paths[i].fillCount > 2)
+		{
+			unsigned int numIndices = ((paths[i].fillCount - 2) * 3);
+			assert(numIndices < D3D->VertexBuffer.MaxBufferEntries);
+			if (numIndices < D3D->VertexBuffer.MaxBufferEntries)
+			{
+				D3D_API_3(D3D->pDeviceContext, DrawIndexed, numIndices, 0, paths[i].fillOffset);
+			}
+		}
     }
 
     D3D_API_1(D3D->pDeviceContext, IASetPrimitiveTopology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
