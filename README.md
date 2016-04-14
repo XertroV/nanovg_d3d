@@ -64,7 +64,7 @@ nvgFill(vg);
 - make sure you have initialised OpenGL with stencil buffer
 - make sure you have cleared stencil buffer
 - make sure all rendering calls happen between `nvgBeginFrame()` and `nvgEndFrame()`
-- to eanble more checks for OpenGL errors, add `NVG_DEBUG` flag to `nvgCreatexxx()`
+- to enable more checks for OpenGL errors, add `NVG_DEBUG` flag to `nvgCreatexxx()`
 - if the problem still persists, please report an issue!
 
 ## OpenGL state touched by the backend
@@ -92,6 +92,7 @@ The data for the whole frame is buffered and flushed in `nvgEndFrame()`. The fol
 	glBindVertexArray(arr);
 	glBindBuffer(GL_ARRAY_BUFFER, buf);
 	glBindTexture(GL_TEXTURE_2D, tex);
+	glUniformBlockBinding(... , GLNVG_FRAG_BINDING);
 ```
 
 ## API Reference
