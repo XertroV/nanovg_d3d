@@ -72,7 +72,7 @@ void nvd3dImageFlags(struct NVGcontext* ctx, int image, int flags);
 // There's probably a better way... (but note we can't use the IInterace_Method() helpers because
 // They won't work when compiled for cpp)
 #ifdef __cplusplus
-#define D3D_API(p, name, arg1) p->name()
+#define D3D_API(p, name) p->name()
 #define D3D_API_1(p, name, arg1) p->name(arg1)
 #define D3D_API_2(p, name, arg1, arg2) p->name(arg1, arg2)
 #define D3D_API_3(p, name, arg1, arg2, arg3) p->name(arg1, arg2, arg3)
