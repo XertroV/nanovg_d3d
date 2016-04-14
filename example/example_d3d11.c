@@ -440,7 +440,9 @@ BOOL InitializeDX(unsigned int x, unsigned int y)
     }
     if (SUCCEEDED(hr))
     {
+#ifdef DEMO_MSAA
         UINT i;
+#endif
         ZeroMemory(&swapDesc, sizeof(swapDesc));
 
         swapDesc.SampleDesc.Count = 1;        //The Number of Multisamples per Level
@@ -462,8 +464,6 @@ BOOL InitializeDX(unsigned int x, unsigned int y)
                 }
             }
         }
-#else
-        NVG_NOTUSED(i);
 #endif
 
         swapDesc.BufferDesc.Width = x;

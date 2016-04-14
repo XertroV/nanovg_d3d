@@ -327,21 +327,21 @@ static void D3Dnvg__deleteShader(struct D3DNVGshader* shader)
 
 void D3Dnvg_buildFanIndices(struct D3DNVGcontext* D3D)
 {
-    D3D11_MAPPED_SUBRESOURCE resource;
-    WORD* pIndices;
-    unsigned int index0 = 0;
-    unsigned int index1 = 1;
-    unsigned int index2 = 2;
-    unsigned int current = 0;
+    UINT32 index0 = 0;
+    UINT32 index1 = 1;
+    UINT32 index2 = 2;
+    UINT32 current = 0;
+	D3D11_MAPPED_SUBRESOURCE resource;
+	UINT32* pIndices = NULL;
 
     D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pFanIndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource);
-    pIndices = (WORD*)resource.pData;
+    pIndices = (UINT32*)resource.pData;
     
     while (current < (D3D->VertexBuffer.MaxBufferEntries - 3))
     {
-        pIndices[current++] = (WORD)index0;
-        pIndices[current++] = (WORD)index1++;
-        pIndices[current++] = (WORD)index2++;
+        pIndices[current++] = index0;
+        pIndices[current++] = index1++;
+        pIndices[current++] = index2++;
     }
     D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pFanIndexBuffer, 0);
 }
@@ -424,7 +424,7 @@ static void D3Dnvg_setBuffers(struct D3DNVGcontext* D3D, unsigned int dynamicOff
     strides[0] = sizeof(struct NVGvertex);
     offsets[0] = dynamicOffset * sizeof(struct NVGvertex);
 
-    D3D_API_3(D3D->pDeviceContext, IASetIndexBuffer, D3D->pFanIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+    D3D_API_3(D3D->pDeviceContext, IASetIndexBuffer, D3D->pFanIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
     D3D_API_5(D3D->pDeviceContext, IASetVertexBuffers, 0, 1, pBuffers, strides, offsets);
     D3D_API_1(D3D->pDeviceContext, IASetInputLayout, D3D->pLayoutRenderTriangles);
 }
@@ -465,7 +465,7 @@ static int D3Dnvg__renderCreate(void* uptr)
 
     // Todo: Need to find a good value for this, and
     // Use the dynamic buffer fill technnique to handle overflow
-    D3D->VertexBuffer.MaxBufferEntries = 20000;
+    D3D->VertexBuffer.MaxBufferEntries = 1000000;
     D3D->VertexBuffer.CurrentBufferEntry = 0;
 
     memset(&bufferDesc, 0, sizeof(bufferDesc));
@@ -480,7 +480,7 @@ static int D3Dnvg__renderCreate(void* uptr)
     D3Dnvg__checkError(hr, "Create Vertex Buffer");
 
     bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-    bufferDesc.ByteWidth = sizeof(WORD)* D3D->VertexBuffer.MaxBufferEntries;
+    bufferDesc.ByteWidth = sizeof(UINT32)* D3D->VertexBuffer.MaxBufferEntries;
     hr = D3D_API_3(D3D->pDevice, CreateBuffer, &bufferDesc, NULL, &D3D->pFanIndexBuffer);
     D3Dnvg__checkError(hr, "Create Vertex Buffer Static");
 
@@ -943,12 +943,15 @@ static void D3Dnvg__convexFill(struct D3DNVGcontext* D3D, struct D3DNVGcall* cal
 	for (i = 0; i < npaths; i++)
     {
         // Draws a fan using indices to fake it up, since there isn't a fan primitive in D3D11.
-        unsigned int numIndices = ((paths[i].fillCount - 2) * 3);
-        assert(numIndices < D3D->VertexBuffer.MaxBufferEntries);
-        if (numIndices < D3D->VertexBuffer.MaxBufferEntries)
-        {
-            D3D_API_3(D3D->pDeviceContext, DrawIndexed, numIndices, 0, paths[i].fillOffset);        
-        }
+		if (paths[i].fillCount > 2)
+		{
+			unsigned int numIndices = ((paths[i].fillCount - 2) * 3);
+			assert(numIndices < D3D->VertexBuffer.MaxBufferEntries);
+			if (numIndices < D3D->VertexBuffer.MaxBufferEntries)
+			{
+				D3D_API_3(D3D->pDeviceContext, DrawIndexed, numIndices, 0, paths[i].fillOffset);
+			}
+		}
     }
 
     D3D_API_1(D3D->pDeviceContext, IASetPrimitiveTopology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
