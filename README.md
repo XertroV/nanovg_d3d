@@ -7,7 +7,7 @@ NanoVG is small antialiased vector graphics rendering library for OpenGL. It has
 
 ## Screenshot
 
-![screenshot of some text rendered witht the sample program](/example/screenshot-01.png?raw=true)
+![screenshot of some text rendered with the sample program](/example/screenshot-01.png?raw=true)
 
 Usage
 =====
@@ -18,20 +18,15 @@ The NanoVG API is modeled loosely on HTML5 canvas API. If you know canvas, you'r
 
 The drawing context is created using platform specific constructor function. If you're using the OpenGL 2.0 back-end the context is created as follows:
 ```C
-#define NANOVG_GL2_IMPLEMENTATION	// Use GL2 implementation.
-#include "nanovg_gl.h"
+#include "nanovg_d3d11.h"
 ...
-struct NVGcontext* vg = nvgCreateGL2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+struct NVGcontext* vg = nvgCreateD3D11(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
 ```
 
 The first parameter defines flags for creating the renderer.
 
 - `NVG_ANTIALIAS` means that the renderer adjusts the geometry to include anti-aliasing. If you're using MSAA, you can omit this flags. 
 - `NVG_STENCIL_STROKES` means that the render uses better quality rendering for (overlapping) strokes. The quality is mostly visible on wider strokes. If you want speed, you can omit this flag.
-
-Currently there is an OpenGL back-end for NanoVG: [nanovg_gl.h](/src/nanovg_gl.h) for OpenGL 2.0, OpenGL ES 2.0, OpenGL 3.2 core profile and OpenGL ES 3. The implementation can be chosen using a define as in above example. See the header file and examples for further info. 
-
-*NOTE:* The render target you're rendering to must have stencil buffer.
 
 ## Drawing shapes with NanoVG
 
@@ -100,9 +95,8 @@ The data for the whole frame is buffered and flushed in `nvgEndFrame()`. The fol
 
 See the header file [nanovg.h](/src/nanovg.h) for API reference.
 
-## Ports
+## Other ports
 
-- [DX11 port](https://github.com/cmaughan/nanovg) by [Chris Maughan](https://github.com/cmaughan)
 - [Metal port](https://github.com/ollix/MetalNanoVG) by [Olli Wang](https://github.com/olliwang)
 - [bgfx port](https://github.com/bkaradzic/bgfx/tree/master/examples/20-nanovg) by [Branimir Karadžić](https://github.com/bkaradzic)
 
