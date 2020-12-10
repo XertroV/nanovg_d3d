@@ -241,7 +241,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     rcWin.right += -rcWin.left;
     rcWin.bottom += -rcWin.top;
   
-    hWndMain = CreateWindowEx(0, pszWindowClass, "Nanovg", WS_OVERLAPPEDWINDOW,
+    hWndMain = CreateWindowEx(0, pszWindowClass, L"Nanovg", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, (int)rcWin.right, (int)rcWin.bottom, NULL, NULL, hInstance, NULL);
 
     if (!hWndMain)
