@@ -531,8 +531,8 @@ static struct NVGcolor D3D9nvg__premulColor(struct NVGcolor c)
 	return c;
 }
 
-static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragUniforms* frag, 
-	struct NVGpaint* paint, struct NVGscissor* scissor,
+static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragUniforms* frag,
+	struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor,
 	float width, float fringe, float strokeThr)
 {
 	struct D3D9NVGtexture* tex = NULL;
@@ -542,6 +542,8 @@ static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragU
 
 	frag->innerCol = D3D9nvg__premulColor(paint->innerColor);
 	frag->outerCol = D3D9nvg__premulColor(paint->outerColor);
+
+	//TODO: Use compositeOperation
 	
 	if (scissor->extent[0] < -0.5f || scissor->extent[1] < -0.5f) 
 	{
@@ -964,7 +966,7 @@ static void D3D9nvg__vset(struct NVGvertex* vtx, float x, float y, float u, floa
 	vtx->v = v;
 }
 
-static void D3D9nvg__renderFill(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe,
+static void D3D9nvg__renderFill(void* uptr, struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor, float fringe,
 							  const float* bounds, const struct NVGpath* paths, int npaths)
 {
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
@@ -1029,12 +1031,12 @@ static void D3D9nvg__renderFill(void* uptr, struct NVGpaint* paint, struct NVGsc
 		frag->strokeMult[1] = -1.0f;
 		frag->type = NSVG_SHADER_SIMPLE;
 		// Fill shader
-		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, fringe, fringe, -1.0f);
+		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, compositeOperation, scissor, fringe, fringe, -1.0f);
 	} else {
 		call->uniformOffset = D3D9nvg__allocFragUniforms(D3D, 1);
 		if (call->uniformOffset == -1) goto error;
 		// Fill shader
-		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f);
+		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, compositeOperation, scissor, fringe, fringe, -1.0f);
 	}
 
 	return;
@@ -1045,7 +1047,7 @@ error:
 	if (D3D->ncalls > 0) D3D->ncalls--;
 }
 
-static void D3D9nvg__renderStroke(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe,
+static void D3D9nvg__renderStroke(void* uptr, struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor, float fringe,
 								float strokeWidth, const struct NVGpath* paths, int npaths)
 {
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
@@ -1082,14 +1084,14 @@ static void D3D9nvg__renderStroke(void* uptr, struct NVGpaint* paint, struct NVG
 		call->uniformOffset = D3D9nvg__allocFragUniforms(D3D, 2);
 		if (call->uniformOffset == -1) goto error;
 
-		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
-		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f/255.0f);
+		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, compositeOperation, scissor, strokeWidth, fringe, -1.0f);
+		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, compositeOperation, scissor, strokeWidth, fringe, 1.0f - 0.5f/255.0f);
 
 	} else {
 		// Fill shader
 		call->uniformOffset = D3D9nvg__allocFragUniforms(D3D, 1);
 		if (call->uniformOffset == -1) goto error;
-		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
+		D3D9nvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, compositeOperation, scissor, strokeWidth, fringe, -1.0f);
 	}
 
 	return;
@@ -1100,7 +1102,7 @@ error:
 	if (D3D->ncalls > 0) D3D->ncalls--;
 }
 
-static void D3D9nvg__renderTriangles(void* uptr, struct NVGpaint* paint, struct NVGscissor* scissor,
+static void D3D9nvg__renderTriangles(void* uptr, struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor,
 								   const struct NVGvertex* verts, int nverts)
 {
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
@@ -1130,7 +1132,7 @@ static void D3D9nvg__renderTriangles(void* uptr, struct NVGpaint* paint, struct 
 	call->uniformOffset = D3D9nvg__allocFragUniforms(D3D, 1);
 	if (call->uniformOffset == -1) goto error;
 	frag = nvg__fragUniformPtr(D3D, call->uniformOffset);
-	D3D9nvg__convertPaint(D3D, frag, paint, scissor, 1.0f, 1.0f, -1.0f);
+	D3D9nvg__convertPaint(D3D, frag, paint, compositeOperation, scissor, 1.0f, 1.0f, -1.0f);
 	frag->type = NSVG_SHADER_IMG;
 
 	return;
