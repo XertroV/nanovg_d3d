@@ -356,10 +356,10 @@ static int D3D9nvg__renderCreateTexture(void* uptr, int type, int w, int h, int 
 	struct D3D9NVGtexture* tex = D3D9nvg__allocTexture(D3D);
 	D3DLOCKED_RECT locked;
 	HRESULT hr;
-	INT levels = 1, usage = D3DUSAGE_DYNAMIC, size;
+	INT levels = 1, usage = D3DUSAGE_DYNAMIC, size, pixelWidthBytes;
 	D3DFORMAT format;
-	int i;
-	unsigned char* texData;
+	int i, y;
+	unsigned char *texData, *tmpData;
 	
 	if (tex == NULL)
 	{
@@ -381,13 +381,15 @@ static int D3D9nvg__renderCreateTexture(void* uptr, int type, int w, int h, int 
 	if (type == NVG_TEXTURE_RGBA)
 	{
 		format = D3DFMT_A8R8G8B8;
-		size = w * h * 4;
+		pixelWidthBytes = 4;
 	}
 	else
 	{
 		format = D3DFMT_L8;
-		size = w * h;
+		pixelWidthBytes = 1;
 	}
+
+	size = w * h * pixelWidthBytes;
 
 	hr = IDirect3DDevice9_CreateTexture(D3D->pDevice, w, h, levels, usage, format, D3DPOOL_DEFAULT, &tex->tex, NULL);
 
@@ -404,15 +406,22 @@ static int D3D9nvg__renderCreateTexture(void* uptr, int type, int w, int h, int 
 		{
 			texData = (unsigned char*)locked.pBits;
 
-			memcpy(texData, data, size);
+			// Have to copy by row since pitch can be different
+			for (y = 0; y < h; y++) {
+				memcpy(texData + y * locked.Pitch, data + y * w * pixelWidthBytes, w * pixelWidthBytes);
+			}
 
 			if (type == NVG_TEXTURE_RGBA)
 			{
-				for (i = 0; i < size; i += 4)
+				for (y = 0; y < h; y++)
 				{
-					unsigned char swp = texData[i];
-					texData[i] = texData[i + 2];
-					texData[i + 2] = swp;
+					for (i = 0; i < w; i++)
+					{
+						tmpData = texData + y * locked.Pitch + i * pixelWidthBytes;
+						unsigned char swp = tmpData[0];
+						tmpData[0] = tmpData[2];
+						tmpData[2] = swp;
+					}
 				}
 			}
 
