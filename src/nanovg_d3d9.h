@@ -635,8 +635,10 @@ static void D3D9nvg__setUniforms(struct D3D9NVGcontext* D3D, int uniformOffset, 
 	}
 }
 
-static void D3D9nvg__renderViewport(void* uptr, int width, int height)
+static void D3D9nvg__renderViewport(void* uptr, float width, float height, float devicePixelRatio)
 {
+	NVG_NOTUSED(devicePixelRatio);
+
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
 	D3D->view[0] = (float)width;
 	D3D->view[1] = (float)height;
