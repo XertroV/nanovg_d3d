@@ -43,7 +43,7 @@ struct NVGcolor {
 typedef struct NVGcolor NVGcolor;
 
 struct NVGpaint {
-	float xform[6];
+	float xform[9];
 	float extent[2];
 	float radius;
 	float feather;
@@ -633,7 +633,7 @@ enum NVGtexture {
 };
 
 struct NVGscissor {
-	float xform[6];
+	float xform[9];
 	float extent[2];
 };
 typedef struct NVGscissor NVGscissor;

@@ -135,10 +135,10 @@ struct D3D9NVGfragUniforms {
 };
 
 struct D3D9NVGcontext {
-	
+
 	struct D3D9NVGshader shader;
 	struct D3D9NVGtexture* textures;
-	float view[4];    
+	float view[4];
 	int ntextures;
 	int ctextures;
 	int textureId;
@@ -230,7 +230,7 @@ static int D3D9nvg__createShader(struct D3D9NVGcontext* D3D, struct D3D9NVGshade
 	IDirect3DVertexShader9* vert = NULL;
 	IDirect3DPixelShader9* frag = NULL;
 	HRESULT hr;
-	
+
 	memset(shader, 0, sizeof(*shader));
 
 	// Shader byte code is created at compile time from the .hlsl files.
@@ -247,7 +247,7 @@ static int D3D9nvg__createShader(struct D3D9NVGcontext* D3D, struct D3D9NVGshade
 		IDirect3DVertexShader9_Release(vert);
 		return 0;
 	}
-	
+
 	shader->vert = vert;
 	shader->frag = frag;
 
@@ -295,7 +295,7 @@ static unsigned int D3D9nvg_updateVertexBuffer(struct D3D9NVGcontext* D3D)
 	}
 
 	memcpy(data, D3D->verts, size);
-	
+
 	IDirect3DVertexBuffer9_Unlock(D3D->VertexBuffer.pBuffer);
 
 	D3D->VertexBuffer.CurrentBufferEntry += D3D->nverts;
@@ -308,13 +308,13 @@ static int D3D9nvg__renderCreate(void* uptr)
 	HRESULT hr;
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
 
-	const D3DVERTEXELEMENT9 LayoutRenderTriangles[] = 
+	const D3DVERTEXELEMENT9 LayoutRenderTriangles[] =
 	{
 		{ 0, 0, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 },
 		{ 0, 8, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0 },
 		D3DDECL_END()
-	}; 
-	
+	};
+
 	if (D3D->flags & NVG_ANTIALIAS) {
 		if (D3D9nvg__createShader(D3D, &D3D->shader, g_vs30_D3D9VertexShader_Main, g_ps30_D3D9PixelShaderAA_Main) == 0)
 			return 0;
@@ -329,7 +329,7 @@ static int D3D9nvg__renderCreate(void* uptr)
 
 	// Create the vertex buffer.
 	hr = IDirect3DDevice9_CreateVertexBuffer(D3D->pDevice, sizeof(NVGvertex) * D3D->VertexBuffer.MaxBufferEntries, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &D3D->VertexBuffer.pBuffer, NULL);
-	
+
 	if (FAILED(hr))
 	{
 		D3D9nvg__deleteShader(&D3D->shader);
@@ -337,7 +337,7 @@ static int D3D9nvg__renderCreate(void* uptr)
 	}
 
 	hr = IDirect3DDevice9_CreateVertexDeclaration(D3D->pDevice, LayoutRenderTriangles, &D3D->pLayoutRenderTriangles);
-	
+
 	if (FAILED(hr))
 	{
 		D3D9nvg__deleteShader(&D3D->shader);
@@ -346,7 +346,7 @@ static int D3D9nvg__renderCreate(void* uptr)
 	}
 
 	D3D->fragSize = sizeof(struct D3D9NVGfragUniforms) + 16 - sizeof(struct D3D9NVGfragUniforms) % 16;
-	
+
 	return 1;
 }
 
@@ -360,7 +360,7 @@ static int D3D9nvg__renderCreateTexture(void* uptr, int type, int w, int h, int 
 	D3DFORMAT format;
 	int i, y;
 	unsigned char *texData, *tmpData;
-	
+
 	if (tex == NULL)
 	{
 		return 0;
@@ -448,7 +448,7 @@ static int D3D9nvg__renderUpdateTexture(void* uptr, int image, int x, int y, int
 	INT pixelWidthBytes, size;
 	unsigned char* texData;
 	int i;
-	
+
 	if (tex == NULL)
 	{
 		return 0;
@@ -494,7 +494,7 @@ static int D3D9nvg__renderUpdateTexture(void* uptr, int image, int x, int y, int
 	}
 
 	IDirect3DTexture9_UnlockRect(tex->tex, 0);
- 
+
 	return 1;
 }
 
@@ -515,13 +515,13 @@ static void D3D9nvg__xformToMat3x3(float* m3, float* t)
 {
 	m3[0] = t[0];
 	m3[1] = t[1];
-	m3[2] = 0.0f;
-	m3[3] = t[2];
-	m3[4] = t[3];
-	m3[5] = 0.0f;
-	m3[6] = t[4];
-	m3[7] = t[5];
-	m3[8] = 1.0f;
+	m3[2] = t[2];
+	m3[3] = t[3];
+	m3[4] = t[4];
+	m3[5] = t[5];
+	m3[6] = t[6];
+	m3[7] = t[7];
+	m3[8] = t[8];
 }
 static void D3D9nvg_copyMatrix3to4(float* pDest, const float* pSource)
 {
@@ -545,7 +545,7 @@ static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragU
 	float width, float fringe, float strokeThr)
 {
 	struct D3D9NVGtexture* tex = NULL;
-	float invxform[6], paintMat[9], scissorMat[9];
+	float invxform[9], paintMat[9], scissorMat[9];
 
 	memset(frag, 0, sizeof(*frag));
 
@@ -553,23 +553,23 @@ static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragU
 	frag->outerCol = D3D9nvg__premulColor(paint->outerColor);
 
 	//TODO: Use compositeOperation
-	
-	if (scissor->extent[0] < -0.5f || scissor->extent[1] < -0.5f) 
+
+	if (scissor->extent[0] < -0.5f || scissor->extent[1] < -0.5f)
 	{
 		frag->scissorExt[0] = 1.0f;
 		frag->scissorExt[1] = 1.0f;
 		frag->scissorScale[0] = 1.0f;
 		frag->scissorScale[1] = 1.0f;
 	}
-	else 
+	else
 	{
 		nvgTransformInverse(invxform, scissor->xform);
 		D3D9nvg__xformToMat3x3(scissorMat, invxform);
 		D3D9nvg_copyMatrix3to4(frag->scissorMat, scissorMat);
 		frag->scissorExt[0] = scissor->extent[0];
 		frag->scissorExt[1] = scissor->extent[1];
-		frag->scissorScale[0] = sqrtf(scissor->xform[0] * scissor->xform[0] + scissor->xform[2] * scissor->xform[2]) / fringe;
-		frag->scissorScale[1] = sqrtf(scissor->xform[1] * scissor->xform[1] + scissor->xform[3] * scissor->xform[3]) / fringe;
+		frag->scissorScale[0] = sqrtf(scissor->xform[0] * scissor->xform[0] + scissor->xform[3] * scissor->xform[3]) / fringe;
+		frag->scissorScale[1] = sqrtf(scissor->xform[1] * scissor->xform[1] + scissor->xform[4] * scissor->xform[4]) / fringe;
 	}
 
 	frag->extent[0] = paint->extent[0];
@@ -578,27 +578,27 @@ static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragU
 	frag->strokeMult[0] = (width*0.5f + fringe*0.5f) / fringe;
 	frag->strokeMult[1] = strokeThr;
 
-	if (paint->image != 0) 
+	if (paint->image != 0)
 	{
 		tex = D3D9nvg__findTexture(D3D, paint->image);
 		if (tex == NULL)
 		{
 			return 0;
 		}
-		
-		if ((tex->flags & NVG_IMAGE_FLIPY) != 0) 
+
+		if ((tex->flags & NVG_IMAGE_FLIPY) != 0)
 		{
-			float flipped[6];
+			float flipped[9];
 			nvgTransformScale(flipped, 1.0f, -1.0f);
 			nvgTransformMultiply(flipped, paint->xform);
 			nvgTransformInverse(invxform, flipped);
-		} 
+		}
 		else
 		{
 			nvgTransformInverse(invxform, paint->xform);
 		}
 		frag->type = NSVG_SHADER_FILLIMG;
-		
+
 		if (tex->type == NVG_TEXTURE_RGBA)
 		{
 			frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0.0f : 1.0f;
@@ -608,7 +608,7 @@ static int D3D9nvg__convertPaint(struct D3D9NVGcontext* D3D, struct D3D9NVGfragU
 			frag->texType = 2.0f;
 		}
 	}
-	else 
+	else
 	{
 		frag->type = NSVG_SHADER_FILLGRAD;
 		frag->radius = paint->radius;
@@ -630,7 +630,7 @@ static void D3D9nvg__setUniforms(struct D3D9NVGcontext* D3D, int uniformOffset, 
 	struct D3D9NVGfragUniforms* frag = nvg__fragUniformPtr(D3D, uniformOffset);
 	IDirect3DDevice9_SetPixelShaderConstantF(D3D->pDevice, 0, &frag->uniformArray[0][0], NANOVG_D3D9_UNIFORMARRAY_SIZE);
 
-	if (image != 0) 
+	if (image != 0)
 	{
 		struct D3D9NVGtexture* tex = D3D9nvg__findTexture(D3D, image);
 		if (tex != NULL)
@@ -660,7 +660,7 @@ static void D3D9nvg__fill(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call)
 
 	// set bindpoint for solid loc
 	D3D9nvg__setUniforms(D3D, call->uniformOffset, 0);
-	
+
 	// Draw shapes
 	IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILENABLE, TRUE);
 	IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_COLORWRITEENABLE, 0);
@@ -678,14 +678,14 @@ static void D3D9nvg__fill(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call)
 	{
 		IDirect3DDevice9_DrawPrimitive(D3D->pDevice, D3DPT_TRIANGLEFAN, paths[i].fillOffset, paths[i].fillCount - 2);
 	}
-	
+
 	IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CULLMODE, D3DCULL_CW);
 	IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_COLORWRITEENABLE, 0xf);
 
 	D3D9nvg__setUniforms(D3D, call->uniformOffset + D3D->fragSize, call->image);
 
 	// Draw anti-aliased pixels
-	if (D3D->flags & NVG_ANTIALIAS) 
+	if (D3D->flags & NVG_ANTIALIAS)
 	{
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILFUNC, D3DCMP_EQUAL);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP);
@@ -695,7 +695,7 @@ static void D3D9nvg__fill(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call)
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILFAIL, D3DSTENCILOP_KEEP);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILZFAIL, D3DSTENCILOP_KEEP);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILPASS, D3DSTENCILOP_KEEP);
-		
+
 		// Draw fringes
 		for (i = 0; i < npaths; i++)
 		{
@@ -722,15 +722,15 @@ static void D3D9nvg__convexFill(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* 
 {
 	struct D3D9NVGpath* paths = &D3D->paths[call->pathOffset];
 	int i, npaths = call->pathCount;
-	
+
 	D3D9nvg__setUniforms(D3D, call->uniformOffset, call->image);
-	
+
 	for (i = 0; i < npaths; i++)
 	{
 		IDirect3DDevice9_DrawPrimitive(D3D->pDevice, D3DPT_TRIANGLEFAN, paths[i].fillOffset, paths[i].fillCount - 2);
 	}
 
-	if (D3D->flags & NVG_ANTIALIAS) 
+	if (D3D->flags & NVG_ANTIALIAS)
 	{
 		// Draw fringes
 		for (i = 0; i < npaths; i++)
@@ -745,7 +745,7 @@ static void D3D9nvg__stroke(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call
 	struct D3D9NVGpath* paths = &D3D->paths[call->pathOffset];
 	int npaths = call->pathCount, i;
 
-	if (D3D->flags & NVG_STENCIL_STROKES) 
+	if (D3D->flags & NVG_STENCIL_STROKES)
 	{
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILENABLE, TRUE);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILFUNC, D3DCMP_EQUAL);
@@ -756,9 +756,9 @@ static void D3D9nvg__stroke(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILFAIL, D3DSTENCILOP_KEEP);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILZFAIL, D3DSTENCILOP_KEEP);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILPASS, D3DSTENCILOP_INCR);
-	 
+
 		D3D9nvg__setUniforms(D3D, call->uniformOffset + D3D->fragSize, call->image);
-		
+
 		// Fill the stroke base without overlap
 		for (i = 0; i < npaths; i++)
 		{
@@ -769,7 +769,7 @@ static void D3D9nvg__stroke(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILPASS, D3DSTENCILOP_KEEP);
 
 		D3D9nvg__setUniforms(D3D, call->uniformOffset, call->image);
-		
+
 		// Draw anti-aliased pixels.
 		for (i = 0; i < npaths; i++)
 		{
@@ -786,7 +786,7 @@ static void D3D9nvg__stroke(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILZFAIL, D3DSTENCILOP_ZERO);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_CCW_STENCILPASS, D3DSTENCILOP_ZERO);
 
-		// Clear stencil buffer.		
+		// Clear stencil buffer.
 		for (i = 0; i < npaths; i++)
 		{
 			IDirect3DDevice9_DrawPrimitive(D3D->pDevice, D3DPT_TRIANGLESTRIP, paths[i].strokeOffset, paths[i].strokeCount - 2);
@@ -794,11 +794,11 @@ static void D3D9nvg__stroke(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call
 
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_COLORWRITEENABLE, 0xf);
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILENABLE, FALSE);
-	} 
+	}
 	else
 	{
 		D3D9nvg__setUniforms(D3D, call->uniformOffset, call->image);
-		
+
 		for (i = 0; i < npaths; i++)
 		{
 			IDirect3DDevice9_DrawPrimitive(D3D->pDevice, D3DPT_TRIANGLESTRIP, paths[i].strokeOffset, paths[i].strokeCount - 2);
@@ -809,11 +809,11 @@ static void D3D9nvg__stroke(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call
 static void D3D9nvg__triangles(struct D3D9NVGcontext* D3D, struct D3D9NVGcall* call)
 {
 	D3D9nvg__setUniforms(D3D, call->uniformOffset, call->image);
-	
+
 	IDirect3DDevice9_DrawPrimitive(D3D->pDevice, D3DPT_TRIANGLELIST, call->triangleOffset, call->triangleCount / 3);
 }
 
-static void D3D9nvg__renderCancel(void* uptr) 
+static void D3D9nvg__renderCancel(void* uptr)
 {
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
 	D3D->nverts = 0;
@@ -827,7 +827,7 @@ static void D3D9nvg__renderFlush(void* uptr)
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)uptr;
 	int i;
 
-	if (D3D->ncalls > 0) 
+	if (D3D->ncalls > 0)
 	{
 		unsigned int buffer0Offset = D3D9nvg_updateVertexBuffer(D3D);
 
@@ -868,10 +868,10 @@ static void D3D9nvg__renderFlush(void* uptr)
 		IDirect3DDevice9_SetSamplerState(D3D->pDevice, 0, D3DSAMP_MAXANISOTROPY, 1);
 		IDirect3DDevice9_SetSamplerState(D3D->pDevice, 0, D3DSAMP_SRGBTEXTURE, FALSE);
 
-		// Draw shapes	   
+		// Draw shapes
 		for (i = 0; i < D3D->ncalls; i++) {
 			struct D3D9NVGcall* call = &D3D->calls[i];
-			
+
 			if (call->type == D3D9NVG_FILL)
 				D3D9nvg__fill(D3D, call);
 			else if (call->type == D3D9NVG_CONVEXFILL)
@@ -1165,7 +1165,7 @@ static void D3D9nvg__renderDelete(void* uptr)
 
 	D3D9nvg__deleteShader(&D3D->shader);
 
-	for (i = 0; i < D3D->ntextures; i++) 
+	for (i = 0; i < D3D->ntextures; i++)
 	{
 		if (D3D->textures[i].tex != NULL && (D3D->textures[i].flags & NVG_IMAGE_NODELETE) == 0)
 		{
@@ -1176,14 +1176,14 @@ static void D3D9nvg__renderDelete(void* uptr)
 	IDirect3DVertexBuffer9_Release(D3D->VertexBuffer.pBuffer);
 
 	IDirect3DVertexDeclaration9_Release(D3D->pLayoutRenderTriangles);
-	
+
 	free(D3D->textures);
 
 	free(D3D->paths);
 	free(D3D->verts);
 	free(D3D->uniforms);
 	free(D3D->calls);
-	
+
 	free(D3D);
 }
 
@@ -1193,7 +1193,7 @@ struct NVGcontext* nvgCreateD3D9(IDirect3DDevice9* pDevice, int flags)
 	struct NVGparams params;
 	struct NVGcontext* ctx = NULL;
 	struct D3D9NVGcontext* D3D = (struct D3D9NVGcontext*)malloc(sizeof(struct D3D9NVGcontext));
-	if (D3D == NULL) 
+	if (D3D == NULL)
 	{
 		goto error;
 	}
