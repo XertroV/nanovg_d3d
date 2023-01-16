@@ -41,8 +41,8 @@ float strokeMask(float2 ftcoord)
 float4 D3D9PixelShaderAA_Main(PS_INPUT input) : COLOR
 {
     float4 result;
-    // float scissor = scissorMask(input.fpos);
-    float scissor = 1.0f;
+    float scissor = scissorMask(input.fpos);
+    // float scissor = 1.0f;
     float strokeAlpha = strokeMask(input.ftcoord);
 
     if (type.x == 0)
