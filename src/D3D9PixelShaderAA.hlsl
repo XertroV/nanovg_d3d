@@ -4,7 +4,7 @@ struct PS_INPUT
 {
     float4 position   : POSITION;       // vertex position
     float2 ftcoord    : TEXCOORD0;      // float 2 tex coord
-    float2 fpos       : TEXCOORD1;      // float 2 position
+    float3 fpos       : TEXCOORD1;      // float 3 position
 };
 
 uniform float4x4 scissorMat : register(c0);
@@ -25,9 +25,9 @@ float sdroundrect(float2 pt, float2 ext, float rad)
 }
 
 // Scissoring
-float scissorMask(float2 p)
+float scissorMask(float3 p)
 {
-    float2 sc = (abs((mul((float3x3)scissorMat, float3(p.x, p.y, 1.0))).xy) - scissorExtScale.xy);
+    float2 sc = (abs((mul((float3x3)scissorMat, float3(p.xy, 1.0))).xy) - scissorExtScale.xy);
     sc = float2(0.5,0.5) - sc * scissorExtScale.zw;
     return clamp(sc.x,0.0,1.0) * clamp(sc.y,0.0,1.0);
 }
@@ -47,7 +47,7 @@ float4 D3D9PixelShaderAA_Main(PS_INPUT input) : COLOR
     if (type.x == 0)
     {
         // Calculate gradient color using box gradient
-        float2 pt = (mul((float3x3)paintMat, float3(input.fpos,1.0))).xy;
+        float2 pt = (mul((float3x3)paintMat, float3(input.fpos.xy,1.0))).xy;
         float d = clamp((sdroundrect(pt, extent.xy, extent.z) + extent.w*0.5) / extent.w, 0.0, 1.0);
         float4 color = lerp(innerCol, outerCol, d);
 
@@ -58,7 +58,7 @@ float4 D3D9PixelShaderAA_Main(PS_INPUT input) : COLOR
     else if (type.x == 1)
     {
         // Calculate color fron texture
-        float2 pt = (mul((float3x3)paintMat, float3(input.fpos,1.0))).xy / extent.xy;
+        float2 pt = (mul((float3x3)paintMat, float3(input.fpos.xy,1.0))).xy / extent.xy;
         float4 color = tex2D(g_sampler, pt);
         if (type.y == 1) color = float4(color.xyz*color.w,color.w);
 		if (type.y == 2) color = float4(color.x, color.x, color.x, color.x);

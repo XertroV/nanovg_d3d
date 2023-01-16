@@ -46,7 +46,7 @@
 #define NVG_INIT_VERTS_SIZE 256
 #define NVG_MAX_STATES 32
 
-#define Z_ 0.0
+#define Z_ 1.0
 
 #define NVG_KAPPA90 0.5522847493f	// Length proportional to radius of a cubic bezier handle for 90deg arcs.
 

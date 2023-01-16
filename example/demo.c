@@ -111,7 +111,7 @@ void drawWindow(NVGcontext* vg, const char* title, float x, float y, float w, fl
 	nvgFontBlur(vg,0);
 	nvgFillColor(vg, nvgRGBA(220,220,220,160));
 
-	// nvgTransformSetGH(vg, .25, .5);
+	nvgTransformSetGH(vg, .25, .5);
 	nvgText(vg, x+w/2,y+16, title, NULL);
 
 	nvgRestore(vg);

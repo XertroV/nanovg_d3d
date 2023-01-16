@@ -641,7 +641,7 @@ struct NVGscissor {
 typedef struct NVGscissor NVGscissor;
 
 struct NVGvertex {
-	float x,y,u,v;
+	float x,y,z,u,v;
 };
 typedef struct NVGvertex NVGvertex;
 
