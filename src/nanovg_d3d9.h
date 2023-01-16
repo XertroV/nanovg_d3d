@@ -139,6 +139,7 @@ struct D3D9NVGcontext {
 	struct D3D9NVGshader shader;
 	struct D3D9NVGtexture* textures;
 	float view[4];
+	// float viewMatrix[16];
 	int ntextures;
 	int ctextures;
 	int textureId;
@@ -859,6 +860,7 @@ static void D3D9nvg__renderFlush(void* uptr)
 		IDirect3DDevice9_SetRenderState(D3D->pDevice, D3DRS_STENCILREF, 0);
 
 		IDirect3DDevice9_SetVertexShaderConstantF(D3D->pDevice, 0, D3D->view, 1);
+		// IDirect3DDevice9_SetVertexShaderConstantF(D3D->pDevice, 1, D3D->viewMatrix, 5);
 
 		IDirect3DDevice9_SetSamplerState(D3D->pDevice, 0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
 		IDirect3DDevice9_SetSamplerState(D3D->pDevice, 0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
@@ -889,6 +891,12 @@ static void D3D9nvg__renderFlush(void* uptr)
 	D3D->ncalls = 0;
 	D3D->nuniforms = 0;
 }
+
+
+void getViewMatrix(float* d) {
+
+}
+
 
 static int D3D9nvg__maxVertCount(const struct NVGpath* paths, int npaths)
 {

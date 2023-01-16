@@ -629,6 +629,14 @@ void nvgTransformPoint(float* dx, float* dy, const float* t, float sx, float sy)
 	*dy = sx*t[1] + sy*t[4] + t[7];
 }
 
+// dest, transform, source
+void nvgTransformPoint3(float* d, const float* t, float sx, float sy, float sz)
+{
+	d[0] = sx*t[0] + sy*t[3] + sz*t[6];
+	d[1] = sx*t[1] + sy*t[4] + sz*t[7];
+	d[2] = sx*t[2] + sy*t[5] + sz*t[8];
+}
+
 float nvgDegToRad(float deg)
 {
 	return deg / 180.0f * NVG_PI;
@@ -1307,6 +1315,15 @@ static void nvg__vset(NVGvertex* vtx, float x, float y, float u, float v)
 {
 	vtx->x = x;
 	vtx->y = y;
+	vtx->u = u;
+	vtx->v = v;
+}
+
+static void nvg__vset3(NVGvertex* vtx, float x, float y, float z, float u, float v)
+{
+	vtx->x = x;
+	vtx->y = y;
+	vtx->z = z;
 	vtx->u = u;
 	vtx->v = v;
 }
@@ -2533,18 +2550,18 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
 		}
 		prevIter = iter;
 		// Transform corners.
-		nvgTransformPoint(&c[0],&c[0+1], state->xform, q.x0*invscale, q.y0*invscale);
-		nvgTransformPoint(&c[3],&c[3+1], state->xform, q.x1*invscale, q.y0*invscale);
-		nvgTransformPoint(&c[6],&c[6+1], state->xform, q.x1*invscale, q.y1*invscale);
-		nvgTransformPoint(&c[9],&c[9+1], state->xform, q.x0*invscale, q.y1*invscale);
+		nvgTransformPoint3(&c[0], state->xform, q.x0*invscale, q.y0*invscale, Z_); // * 1.5);
+		nvgTransformPoint3(&c[3], state->xform, q.x1*invscale, q.y0*invscale, Z_); // * 1.5);
+		nvgTransformPoint3(&c[6], state->xform, q.x1*invscale, q.y1*invscale, Z_); // * 0.5);
+		nvgTransformPoint3(&c[9], state->xform, q.x0*invscale, q.y1*invscale, Z_); // * 0.5);
 		// Create triangles
 		if (nverts+6 <= cverts) {
-			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
-			nvg__vset(&verts[nverts], c[6], c[7], q.s1, q.t1); nverts++;
-			nvg__vset(&verts[nverts], c[3], c[4], q.s1, q.t0); nverts++;
-			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
-			nvg__vset(&verts[nverts], c[9], c[10],q.s0, q.t1); nverts++;
-			nvg__vset(&verts[nverts], c[6], c[7], q.s1, q.t1); nverts++;
+			nvg__vset3(&verts[nverts], c[0], c[0+1], c[0+2], q.s0, q.t0); nverts++;
+			nvg__vset3(&verts[nverts], c[6], c[6+1], c[6+2], q.s1, q.t1); nverts++;
+			nvg__vset3(&verts[nverts], c[3], c[3+1], c[3+2], q.s1, q.t0); nverts++;
+			nvg__vset3(&verts[nverts], c[0], c[0+1], c[0+2], q.s0, q.t0); nverts++;
+			nvg__vset3(&verts[nverts], c[9], c[9+1], c[9+2], q.s0, q.t1); nverts++;
+			nvg__vset3(&verts[nverts], c[6], c[6+1], c[6+2], q.s1, q.t1); nverts++;
 		}
 	}
 
