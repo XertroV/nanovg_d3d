@@ -526,7 +526,7 @@ void nvgTransformTranslate(float* t, float tx, float ty)
 {
 	t[0] = 1.0f; t[1] = 0.0f; t[2] = 0.0f;
 	t[3] = 0.0f; t[4] = 1.0f; t[5] = 0.0f;
-	t[6] = tx; t[7] = ty; t[8] = 0.0f;
+	t[6] = tx; t[7] = ty; t[8] = 1.0f;
 }
 
 void nvgTransformScale(float* t, float sx, float sy)
@@ -541,28 +541,28 @@ void nvgTransformRotate(float* t, float a)
 	float cs = nvg__cosf(a), sn = nvg__sinf(a);
 	t[0] = cs; t[1] = sn; t[2] = 0.0f;
 	t[3] = -sn; t[4] = cs; t[5] = 0.0f;
-	t[6] = 0.0f; t[7] = 0.0f; t[8] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 1.0f;
 }
 
 void nvgTransformSkewX(float* t, float a)
 {
 	t[0] = 1.0f; t[1] = 0.0f; t[2] = 0.0f;
 	t[3] = nvg__tanf(a); t[4] = 1.0f; t[5] = 0.0f;
-	t[6] = 0.0f; t[7] = 0.0f; t[8] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 1.0f;
 }
 
 void nvgTransformSkewY(float* t, float a)
 {
 	t[0] = 1.0f; t[1] = nvg__tanf(a); t[2] = 0.0f;
 	t[3] = 0.0f; t[4] = 1.0f; t[5] = 0.0f;
-	t[6] = 0.0f; t[7] = 0.0f; t[8] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 1.0f;
 }
 
 void nvgTransformMultiply(float* t, const float* s)
 {
 	float t0 = t[0] * s[0] + t[1] * s[3] + t[2] * s[6];
 	float t3 = t[3] * s[0] + t[4] * s[3] + t[5] * s[6];
-	float t6 = t[6] * s[0] + t[7] * s[3] + t[7] * s[6];
+	float t6 = t[6] * s[0] + t[7] * s[3] + t[8] * s[6];
 	float t1 = t[0] * s[1] + t[1] * s[4] + t[2] * s[7];
 	float t4 = t[3] * s[1] + t[4] * s[4] + t[5] * s[7];
 	float t7 = t[6] * s[1] + t[7] * s[4] + t[8] * s[7];
@@ -888,9 +888,9 @@ NVGpaint nvgLinearGradient(NVGcontext* ctx,
 		dy = 1;
 	}
 
-	p.xform[0] = dy; p.xform[1] = -dx;
-	p.xform[3] = dx; p.xform[4] = dy;
-	p.xform[6] = sx - dx*large; p.xform[7] = sy - dy*large;
+	p.xform[0] = dy; p.xform[1] = -dx; p.xform[2] = 0.0;
+	p.xform[3] = dx; p.xform[4] = dy; p.xform[5] = 0.0;
+	p.xform[6] = sx - dx*large; p.xform[7] = sy - dy*large; p.xform[8] = 1.0;
 
 	p.extent[0] = large;
 	p.extent[1] = large + d*0.5f;
