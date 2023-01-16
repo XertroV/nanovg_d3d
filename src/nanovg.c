@@ -46,6 +46,8 @@
 #define NVG_INIT_VERTS_SIZE 256
 #define NVG_MAX_STATES 32
 
+#define Z_ 0.0
+
 #define NVG_KAPPA90 0.5522847493f	// Length proportional to radius of a cubic bezier handle for 90deg arcs.
 
 #define NVG_COUNTOF(arr) (sizeof(arr) / sizeof(0[arr]))
@@ -736,6 +738,13 @@ void nvgTransform(NVGcontext* ctx, float a, float b, float c, float d, float e, 
 	nvgTransformPremultiply(state->xform, t);
 }
 
+void nvgTransformSetGH(NVGcontext* ctx, float g, float h)
+{
+	NVGstate* state = nvg__getState(ctx);
+	state->xform[2] = g;
+	state->xform[5] = h;
+}
+
 void nvgResetTransform(NVGcontext* ctx)
 {
 	NVGstate* state = nvg__getState(ctx);
@@ -1122,17 +1131,17 @@ static void nvg__appendCommands(NVGcontext* ctx, float* vals, int nvals)
 		switch (cmd) {
 		case NVG_MOVETO:
 			nvgTransformPoint(&vals[i+1],&vals[i+2], state->xform, vals[i+1],vals[i+2]);
-			i += 3;
+			i += 4;
 			break;
 		case NVG_LINETO:
 			nvgTransformPoint(&vals[i+1],&vals[i+2], state->xform, vals[i+1],vals[i+2]);
-			i += 3;
+			i += 4;
 			break;
 		case NVG_BEZIERTO:
 			nvgTransformPoint(&vals[i+1],&vals[i+2], state->xform, vals[i+1],vals[i+2]);
-			nvgTransformPoint(&vals[i+3],&vals[i+4], state->xform, vals[i+3],vals[i+4]);
-			nvgTransformPoint(&vals[i+5],&vals[i+6], state->xform, vals[i+5],vals[i+6]);
-			i += 7;
+			nvgTransformPoint(&vals[i+4],&vals[i+5], state->xform, vals[i+4],vals[i+5]);
+			nvgTransformPoint(&vals[i+7],&vals[i+8], state->xform, vals[i+7],vals[i+8]);
+			i += 10;
 			break;
 		case NVG_CLOSE:
 			i++;
@@ -1372,22 +1381,22 @@ static void nvg__flattenPaths(NVGcontext* ctx)
 			nvg__addPath(ctx);
 			p = &ctx->commands[i+1];
 			nvg__addPoint(ctx, p[0], p[1], NVG_PT_CORNER);
-			i += 3;
+			i += 4;
 			break;
 		case NVG_LINETO:
 			p = &ctx->commands[i+1];
 			nvg__addPoint(ctx, p[0], p[1], NVG_PT_CORNER);
-			i += 3;
+			i += 4;
 			break;
 		case NVG_BEZIERTO:
 			last = nvg__lastPoint(ctx);
 			if (last != NULL) {
 				cp1 = &ctx->commands[i+1];
-				cp2 = &ctx->commands[i+3];
-				p = &ctx->commands[i+5];
+				cp2 = &ctx->commands[i+4];
+				p = &ctx->commands[i+7];
 				nvg__tesselateBezier(ctx, last->x,last->y, cp1[0],cp1[1], cp2[0],cp2[1], p[0],p[1], 0, NVG_PT_CORNER);
 			}
-			i += 7;
+			i += 10;
 			break;
 		case NVG_CLOSE:
 			nvg__closePath(ctx);
@@ -1484,7 +1493,7 @@ static NVGvertex* nvg__roundJoin(NVGvertex* dst, NVGpoint* p0, NVGpoint* p1,
 		a1 = atan2f(-dly1, -dlx1);
 		if (a1 > a0) a1 -= NVG_PI*2;
 
-		nvg__vset(dst, lx0, ly0, lu,1); dst++;
+		nvg__vset(dst, lx0, ly0, lu, 1); dst++;
 		nvg__vset(dst, p1->x - dlx0*rw, p1->y - dly0*rw, ru,1); dst++;
 
 		n = nvg__clampi((int)ceilf(((a0 - a1) / NVG_PI) * ncap), 2, ncap);
@@ -1998,19 +2007,19 @@ void nvgBeginPath(NVGcontext* ctx)
 
 void nvgMoveTo(NVGcontext* ctx, float x, float y)
 {
-	float vals[] = { NVG_MOVETO, x, y };
+	float vals[] = { NVG_MOVETO, x, y, Z_ };
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
 }
 
 void nvgLineTo(NVGcontext* ctx, float x, float y)
 {
-	float vals[] = { NVG_LINETO, x, y };
+	float vals[] = { NVG_LINETO, x, y, Z_ };
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
 }
 
 void nvgBezierTo(NVGcontext* ctx, float c1x, float c1y, float c2x, float c2y, float x, float y)
 {
-	float vals[] = { NVG_BEZIERTO, c1x, c1y, c2x, c2y, x, y };
+	float vals[] = { NVG_BEZIERTO, c1x, c1y, Z_, c2x, c2y, Z_, x, y, Z_ };
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
 }
 
@@ -2019,9 +2028,9 @@ void nvgQuadTo(NVGcontext* ctx, float cx, float cy, float x, float y)
     float x0 = ctx->commandx;
     float y0 = ctx->commandy;
     float vals[] = { NVG_BEZIERTO,
-        x0 + 2.0f/3.0f*(cx - x0), y0 + 2.0f/3.0f*(cy - y0),
-        x + 2.0f/3.0f*(cx - x), y + 2.0f/3.0f*(cy - y),
-        x, y };
+        x0 + 2.0f/3.0f*(cx - x0), y0 + 2.0f/3.0f*(cy - y0), Z_,
+        x + 2.0f/3.0f*(cx - x), y + 2.0f/3.0f*(cy - y), Z_,
+        x, y, Z_ };
     nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
 }
 
@@ -2098,7 +2107,7 @@ void nvgArc(NVGcontext* ctx, float cx, float cy, float r, float a0, float a1, in
 	float a = 0, da = 0, hda = 0, kappa = 0;
 	float dx = 0, dy = 0, x = 0, y = 0, tanx = 0, tany = 0;
 	float px = 0, py = 0, ptanx = 0, ptany = 0;
-	float vals[3 + 5*7 + 100];
+	float vals[3 + 5*10 + 100];
 	int i, ndivs, nvals;
 	int move = ctx->ncommands > 0 ? NVG_LINETO : NVG_MOVETO;
 
@@ -2140,14 +2149,18 @@ void nvgArc(NVGcontext* ctx, float cx, float cy, float r, float a0, float a1, in
 			vals[nvals++] = (float)move;
 			vals[nvals++] = x;
 			vals[nvals++] = y;
+			vals[nvals++] = Z_;
 		} else {
 			vals[nvals++] = NVG_BEZIERTO;
 			vals[nvals++] = px+ptanx;
 			vals[nvals++] = py+ptany;
+			vals[nvals++] = Z_;
 			vals[nvals++] = x-tanx;
 			vals[nvals++] = y-tany;
+			vals[nvals++] = Z_;
 			vals[nvals++] = x;
 			vals[nvals++] = y;
+			vals[nvals++] = Z_;
 		}
 		px = x;
 		py = y;
@@ -2161,10 +2174,10 @@ void nvgArc(NVGcontext* ctx, float cx, float cy, float r, float a0, float a1, in
 void nvgRect(NVGcontext* ctx, float x, float y, float w, float h)
 {
 	float vals[] = {
-		NVG_MOVETO, x,y,
-		NVG_LINETO, x,y+h,
-		NVG_LINETO, x+w,y+h,
-		NVG_LINETO, x+w,y,
+		NVG_MOVETO, x,y,Z_,
+		NVG_LINETO, x,y+h,Z_,
+		NVG_LINETO, x+w,y+h,Z_,
+		NVG_LINETO, x+w,y,Z_,
 		NVG_CLOSE
 	};
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
@@ -2188,15 +2201,15 @@ void nvgRoundedRectVarying(NVGcontext* ctx, float x, float y, float w, float h, 
 		float rxTR = nvg__minf(radTopRight, halfw) * nvg__signf(w), ryTR = nvg__minf(radTopRight, halfh) * nvg__signf(h);
 		float rxTL = nvg__minf(radTopLeft, halfw) * nvg__signf(w), ryTL = nvg__minf(radTopLeft, halfh) * nvg__signf(h);
 		float vals[] = {
-			NVG_MOVETO, x, y + ryTL,
-			NVG_LINETO, x, y + h - ryBL,
-			NVG_BEZIERTO, x, y + h - ryBL*(1 - NVG_KAPPA90), x + rxBL*(1 - NVG_KAPPA90), y + h, x + rxBL, y + h,
-			NVG_LINETO, x + w - rxBR, y + h,
-			NVG_BEZIERTO, x + w - rxBR*(1 - NVG_KAPPA90), y + h, x + w, y + h - ryBR*(1 - NVG_KAPPA90), x + w, y + h - ryBR,
-			NVG_LINETO, x + w, y + ryTR,
-			NVG_BEZIERTO, x + w, y + ryTR*(1 - NVG_KAPPA90), x + w - rxTR*(1 - NVG_KAPPA90), y, x + w - rxTR, y,
-			NVG_LINETO, x + rxTL, y,
-			NVG_BEZIERTO, x + rxTL*(1 - NVG_KAPPA90), y, x, y + ryTL*(1 - NVG_KAPPA90), x, y + ryTL,
+			NVG_MOVETO, x, y + ryTL, Z_,
+			NVG_LINETO, x, y + h - ryBL, Z_,
+			NVG_BEZIERTO, x, y + h - ryBL*(1 - NVG_KAPPA90), Z_, x + rxBL*(1 - NVG_KAPPA90), y + h, Z_, x + rxBL, y + h, Z_,
+			NVG_LINETO, x + w - rxBR, y + h, Z_,
+			NVG_BEZIERTO, x + w - rxBR*(1 - NVG_KAPPA90), y + h, Z_, x + w, y + h - ryBR*(1 - NVG_KAPPA90), Z_, x + w, y + h - ryBR, Z_,
+			NVG_LINETO, x + w, y + ryTR, Z_,
+			NVG_BEZIERTO, x + w, y + ryTR*(1 - NVG_KAPPA90), Z_, x + w - rxTR*(1 - NVG_KAPPA90), y, Z_, x + w - rxTR, y, Z_,
+			NVG_LINETO, x + rxTL, y, Z_,
+			NVG_BEZIERTO, x + rxTL*(1 - NVG_KAPPA90), y, Z_, x, y + ryTL*(1 - NVG_KAPPA90), Z_, x, y + ryTL, Z_,
 			NVG_CLOSE
 		};
 		nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
@@ -2206,11 +2219,11 @@ void nvgRoundedRectVarying(NVGcontext* ctx, float x, float y, float w, float h, 
 void nvgEllipse(NVGcontext* ctx, float cx, float cy, float rx, float ry)
 {
 	float vals[] = {
-		NVG_MOVETO, cx-rx, cy,
-		NVG_BEZIERTO, cx-rx, cy+ry*NVG_KAPPA90, cx-rx*NVG_KAPPA90, cy+ry, cx, cy+ry,
-		NVG_BEZIERTO, cx+rx*NVG_KAPPA90, cy+ry, cx+rx, cy+ry*NVG_KAPPA90, cx+rx, cy,
-		NVG_BEZIERTO, cx+rx, cy-ry*NVG_KAPPA90, cx+rx*NVG_KAPPA90, cy-ry, cx, cy-ry,
-		NVG_BEZIERTO, cx-rx*NVG_KAPPA90, cy-ry, cx-rx, cy-ry*NVG_KAPPA90, cx-rx, cy,
+		NVG_MOVETO, cx-rx, cy, Z_,
+		NVG_BEZIERTO, cx-rx, cy+ry*NVG_KAPPA90, Z_, cx-rx*NVG_KAPPA90, cy+ry, Z_, cx, cy+ry, Z_,
+		NVG_BEZIERTO, cx+rx*NVG_KAPPA90, cy+ry, Z_, cx+rx, cy+ry*NVG_KAPPA90, Z_, cx+rx, cy, Z_,
+		NVG_BEZIERTO, cx+rx, cy-ry*NVG_KAPPA90, Z_, cx+rx*NVG_KAPPA90, cy-ry, Z_, cx, cy-ry, Z_,
+		NVG_BEZIERTO, cx-rx*NVG_KAPPA90, cy-ry, Z_, cx-rx, cy-ry*NVG_KAPPA90, Z_, cx-rx, cy, Z_,
 		NVG_CLOSE
 	};
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
@@ -2505,7 +2518,7 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
 	fonsTextIterInit(ctx->fs, &iter, x*scale, y*scale, string, end, FONS_GLYPH_BITMAP_REQUIRED);
 	prevIter = iter;
 	while (fonsTextIterNext(ctx->fs, &iter, &q)) {
-		float c[4*2];
+		float c[4*3];
 		if (iter.prevGlyphIndex == -1) { // can not retrieve glyph?
 			if (nverts != 0) {
 				nvg__renderText(ctx, verts, nverts);
@@ -2520,18 +2533,18 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
 		}
 		prevIter = iter;
 		// Transform corners.
-		nvgTransformPoint(&c[0],&c[1], state->xform, q.x0*invscale, q.y0*invscale);
-		nvgTransformPoint(&c[2],&c[3], state->xform, q.x1*invscale, q.y0*invscale);
-		nvgTransformPoint(&c[4],&c[5], state->xform, q.x1*invscale, q.y1*invscale);
-		nvgTransformPoint(&c[6],&c[7], state->xform, q.x0*invscale, q.y1*invscale);
+		nvgTransformPoint(&c[0],&c[0+1], state->xform, q.x0*invscale, q.y0*invscale);
+		nvgTransformPoint(&c[3],&c[3+1], state->xform, q.x1*invscale, q.y0*invscale);
+		nvgTransformPoint(&c[6],&c[6+1], state->xform, q.x1*invscale, q.y1*invscale);
+		nvgTransformPoint(&c[9],&c[9+1], state->xform, q.x0*invscale, q.y1*invscale);
 		// Create triangles
 		if (nverts+6 <= cverts) {
 			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
-			nvg__vset(&verts[nverts], c[4], c[5], q.s1, q.t1); nverts++;
-			nvg__vset(&verts[nverts], c[2], c[3], q.s1, q.t0); nverts++;
+			nvg__vset(&verts[nverts], c[6], c[7], q.s1, q.t1); nverts++;
+			nvg__vset(&verts[nverts], c[3], c[4], q.s1, q.t0); nverts++;
 			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
-			nvg__vset(&verts[nverts], c[6], c[7], q.s0, q.t1); nverts++;
-			nvg__vset(&verts[nverts], c[4], c[5], q.s1, q.t1); nverts++;
+			nvg__vset(&verts[nverts], c[9], c[10],q.s0, q.t1); nverts++;
+			nvg__vset(&verts[nverts], c[6], c[7], q.s1, q.t1); nverts++;
 		}
 	}
 

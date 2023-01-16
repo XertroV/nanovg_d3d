@@ -110,6 +110,8 @@ void drawWindow(NVGcontext* vg, const char* title, float x, float y, float w, fl
 
 	nvgFontBlur(vg,0);
 	nvgFillColor(vg, nvgRGBA(220,220,220,160));
+
+	// nvgTransformSetGH(vg, .25, .5);
 	nvgText(vg, x+w/2,y+16, title, NULL);
 
 	nvgRestore(vg);
@@ -1193,8 +1195,8 @@ static void flipHorizontal(unsigned char* image, int w, int h, int stride)
 {
 	int i = 0, j = h-1, k;
 	while (i < j) {
-		unsigned char* ri = &image[i * stride];		
-		unsigned char* rj = &image[j * stride];		
+		unsigned char* ri = &image[i * stride];
+		unsigned char* rj = &image[j * stride];
 		for (k = 0; k < w*4; k++) {
 			unsigned char t = ri[k];
 			ri[k] = rj[k];
@@ -1226,4 +1228,3 @@ void saveScreenShot(int w, int h, int premult, const char* name)
     assert(!"Not implemented for D3D yet");
 }
 #endif
-
