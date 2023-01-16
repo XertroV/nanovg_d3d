@@ -77,7 +77,7 @@ struct NVGstate {
 	int lineJoin;
 	int lineCap;
 	float alpha;
-	float xform[6];
+	float xform[9];
 	NVGscissor scissor;
 	float fontSize;
 	float letterSpacing;
@@ -517,89 +517,114 @@ NVGcolor nvgHSLA(float h, float s, float l, unsigned char a)
 
 void nvgTransformIdentity(float* t)
 {
-	t[0] = 1.0f; t[1] = 0.0f;
-	t[2] = 0.0f; t[3] = 1.0f;
-	t[4] = 0.0f; t[5] = 0.0f;
+	t[0] = 1.0f; t[1] = 0.0f; t[2] = 0.0f;
+	t[3] = 0.0f; t[4] = 1.0f; t[5] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 1.0f;
 }
 
 void nvgTransformTranslate(float* t, float tx, float ty)
 {
-	t[0] = 1.0f; t[1] = 0.0f;
-	t[2] = 0.0f; t[3] = 1.0f;
-	t[4] = tx; t[5] = ty;
+	t[0] = 1.0f; t[1] = 0.0f; t[2] = 0.0f;
+	t[3] = 0.0f; t[4] = 1.0f; t[5] = 0.0f;
+	t[6] = tx; t[7] = ty; t[8] = 0.0f;
 }
 
 void nvgTransformScale(float* t, float sx, float sy)
 {
-	t[0] = sx; t[1] = 0.0f;
-	t[2] = 0.0f; t[3] = sy;
-	t[4] = 0.0f; t[5] = 0.0f;
+	t[0] = sx; t[1] = 0.0f; t[2] = 0.0f;
+	t[3] = 0.0f; t[4] = sy; t[5] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 1.0f;
 }
 
 void nvgTransformRotate(float* t, float a)
 {
 	float cs = nvg__cosf(a), sn = nvg__sinf(a);
-	t[0] = cs; t[1] = sn;
-	t[2] = -sn; t[3] = cs;
-	t[4] = 0.0f; t[5] = 0.0f;
+	t[0] = cs; t[1] = sn; t[2] = 0.0f;
+	t[3] = -sn; t[4] = cs; t[5] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 0.0f;
 }
 
 void nvgTransformSkewX(float* t, float a)
 {
-	t[0] = 1.0f; t[1] = 0.0f;
-	t[2] = nvg__tanf(a); t[3] = 1.0f;
-	t[4] = 0.0f; t[5] = 0.0f;
+	t[0] = 1.0f; t[1] = 0.0f; t[2] = 0.0f;
+	t[3] = nvg__tanf(a); t[4] = 1.0f; t[5] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 0.0f;
 }
 
 void nvgTransformSkewY(float* t, float a)
 {
-	t[0] = 1.0f; t[1] = nvg__tanf(a);
-	t[2] = 0.0f; t[3] = 1.0f;
-	t[4] = 0.0f; t[5] = 0.0f;
+	t[0] = 1.0f; t[1] = nvg__tanf(a); t[2] = 0.0f;
+	t[3] = 0.0f; t[4] = 1.0f; t[5] = 0.0f;
+	t[6] = 0.0f; t[7] = 0.0f; t[8] = 0.0f;
 }
 
 void nvgTransformMultiply(float* t, const float* s)
 {
-	float t0 = t[0] * s[0] + t[1] * s[2];
-	float t2 = t[2] * s[0] + t[3] * s[2];
-	float t4 = t[4] * s[0] + t[5] * s[2] + s[4];
-	t[1] = t[0] * s[1] + t[1] * s[3];
-	t[3] = t[2] * s[1] + t[3] * s[3];
-	t[5] = t[4] * s[1] + t[5] * s[3] + s[5];
+	float t0 = t[0] * s[0] + t[1] * s[3] + t[2] * s[6];
+	float t3 = t[3] * s[0] + t[4] * s[3] + t[5] * s[6];
+	float t6 = t[6] * s[0] + t[7] * s[3] + t[7] * s[6];
+	float t1 = t[0] * s[1] + t[1] * s[4] + t[2] * s[7];
+	float t4 = t[3] * s[1] + t[4] * s[4] + t[5] * s[7];
+	float t7 = t[6] * s[1] + t[7] * s[4] + t[8] * s[7];
+	t[2] = t[0] * s[2] + t[1] * s[5] + t[2] * s[8];
+	t[5] = t[3] * s[2] + t[4] * s[5] + t[5] * s[8];
+	t[8] = t[6] * s[2] + t[7] * s[5] + t[8] * s[8];
 	t[0] = t0;
-	t[2] = t2;
+	t[3] = t3;
+	t[6] = t6;
+	t[1] = t1;
 	t[4] = t4;
+	t[7] = t7;
 }
 
 void nvgTransformPremultiply(float* t, const float* s)
 {
-	float s2[6];
-	memcpy(s2, s, sizeof(float)*6);
+	float s2[9];
+	memcpy(s2, s, sizeof(float)*9);
 	nvgTransformMultiply(s2, t);
-	memcpy(t, s2, sizeof(float)*6);
+	memcpy(t, s2, sizeof(float)*9);
 }
 
 int nvgTransformInverse(float* inv, const float* t)
 {
-	double invdet, det = (double)t[0] * t[3] - (double)t[2] * t[1];
+	double a = t[0];
+	double b = t[3];
+	double c = t[6];
+	double d = t[1];
+	double e = t[4];
+	double f = t[7];
+	double g = t[2];
+	double h = t[5];
+	double i = t[8];
+	double _A = (e * i - f * h);
+	double _B = (d * i - f * g) * -1.0;
+	double _C = (d * h - e * g);
+	double invdet, det = a * _A + b * _B + c * _C;
+	// double invdet, det = (double)t[0] * ((double)t[4]*t[8] - (double)t[5]*t[7])
+	// 	- (double)t[1] * ((double)t[3]*t[8] - (double)t[5]*t[6])
+	// 	+ (double)t[2] * ((double)t[3]*t[7] - (double)t[4]*t[6]);
+	// 	;
 	if (det > -1e-6 && det < 1e-6) {
 		nvgTransformIdentity(inv);
 		return 0;
 	}
 	invdet = 1.0 / det;
-	inv[0] = (float)(t[3] * invdet);
-	inv[2] = (float)(-t[2] * invdet);
-	inv[4] = (float)(((double)t[2] * t[5] - (double)t[3] * t[4]) * invdet);
-	inv[1] = (float)(-t[1] * invdet);
-	inv[3] = (float)(t[0] * invdet);
-	inv[5] = (float)(((double)t[1] * t[4] - (double)t[0] * t[5]) * invdet);
+	inv[0] = (float)(_A * invdet);
+	inv[3] = (float)((b * i - c * h) * invdet) * -1.0;
+	inv[6] = (float)((b * f - c * e) * invdet);
+	inv[1] = (float)(_B * invdet); // _B already multiplied by -1
+	inv[4] = (float)((a * i - c * g) * invdet);
+	inv[7] = (float)((a * f - c * d) * invdet) * -1.0;
+	inv[2] = (float)(_C * invdet);
+	inv[5] = (float)((a * h - b * g) * invdet) * -1.0;
+	inv[8] = (float)((a * e - b * d) * invdet);
 	return 1;
 }
 
 void nvgTransformPoint(float* dx, float* dy, const float* t, float sx, float sy)
 {
-	*dx = sx*t[0] + sy*t[2] + t[4];
-	*dy = sx*t[1] + sy*t[3] + t[5];
+	*dx = sx*t[0] + sy*t[3] + t[6];
+	*dy = sx*t[1] + sy*t[4] + t[7];
 }
 
 float nvgDegToRad(float deg)
@@ -704,10 +729,10 @@ void nvgGlobalAlpha(NVGcontext* ctx, float alpha)
 	state->alpha = alpha;
 }
 
-void nvgTransform(NVGcontext* ctx, float a, float b, float c, float d, float e, float f)
+void nvgTransform(NVGcontext* ctx, float a, float b, float c, float d, float e, float f, float g, float h, float i)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float t[6] = { a, b, c, d, e, f };
+	float t[9] = { a, b, c, d, e, f, g, h, i };
 	nvgTransformPremultiply(state->xform, t);
 }
 
@@ -720,7 +745,7 @@ void nvgResetTransform(NVGcontext* ctx)
 void nvgTranslate(NVGcontext* ctx, float x, float y)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float t[6];
+	float t[9];
 	nvgTransformTranslate(t, x,y);
 	nvgTransformPremultiply(state->xform, t);
 }
@@ -728,7 +753,7 @@ void nvgTranslate(NVGcontext* ctx, float x, float y)
 void nvgRotate(NVGcontext* ctx, float angle)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float t[6];
+	float t[9];
 	nvgTransformRotate(t, angle);
 	nvgTransformPremultiply(state->xform, t);
 }
@@ -736,7 +761,7 @@ void nvgRotate(NVGcontext* ctx, float angle)
 void nvgSkewX(NVGcontext* ctx, float angle)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float t[6];
+	float t[9];
 	nvgTransformSkewX(t, angle);
 	nvgTransformPremultiply(state->xform, t);
 }
@@ -744,7 +769,7 @@ void nvgSkewX(NVGcontext* ctx, float angle)
 void nvgSkewY(NVGcontext* ctx, float angle)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float t[6];
+	float t[9];
 	nvgTransformSkewY(t, angle);
 	nvgTransformPremultiply(state->xform, t);
 }
@@ -752,7 +777,7 @@ void nvgSkewY(NVGcontext* ctx, float angle)
 void nvgScale(NVGcontext* ctx, float x, float y)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float t[6];
+	float t[9];
 	nvgTransformScale(t, x,y);
 	nvgTransformPremultiply(state->xform, t);
 }
@@ -761,7 +786,7 @@ void nvgCurrentTransform(NVGcontext* ctx, float* xform)
 {
 	NVGstate* state = nvg__getState(ctx);
 	if (xform == NULL) return;
-	memcpy(xform, state->xform, sizeof(float)*6);
+	memcpy(xform, state->xform, sizeof(float)*9);
 }
 
 void nvgStrokeColor(NVGcontext* ctx, NVGcolor color)
@@ -864,8 +889,8 @@ NVGpaint nvgLinearGradient(NVGcontext* ctx,
 	}
 
 	p.xform[0] = dy; p.xform[1] = -dx;
-	p.xform[2] = dx; p.xform[3] = dy;
-	p.xform[4] = sx - dx*large; p.xform[5] = sy - dy*large;
+	p.xform[3] = dx; p.xform[4] = dy;
+	p.xform[6] = sx - dx*large; p.xform[7] = sy - dy*large;
 
 	p.extent[0] = large;
 	p.extent[1] = large + d*0.5f;
@@ -891,8 +916,8 @@ NVGpaint nvgRadialGradient(NVGcontext* ctx,
 	memset(&p, 0, sizeof(p));
 
 	nvgTransformIdentity(p.xform);
-	p.xform[4] = cx;
-	p.xform[5] = cy;
+	p.xform[6] = cx;
+	p.xform[7] = cy;
 
 	p.extent[0] = r;
 	p.extent[1] = r;
@@ -916,8 +941,8 @@ NVGpaint nvgBoxGradient(NVGcontext* ctx,
 	memset(&p, 0, sizeof(p));
 
 	nvgTransformIdentity(p.xform);
-	p.xform[4] = x+w*0.5f;
-	p.xform[5] = y+h*0.5f;
+	p.xform[6] = x+w*0.5f;
+	p.xform[7] = y+h*0.5f;
 
 	p.extent[0] = w*0.5f;
 	p.extent[1] = h*0.5f;
@@ -942,8 +967,8 @@ NVGpaint nvgImagePattern(NVGcontext* ctx,
 	memset(&p, 0, sizeof(p));
 
 	nvgTransformRotate(p.xform, angle);
-	p.xform[4] = cx;
-	p.xform[5] = cy;
+	p.xform[6] = cx;
+	p.xform[7] = cy;
 
 	p.extent[0] = w;
 	p.extent[1] = h;
@@ -964,8 +989,8 @@ void nvgScissor(NVGcontext* ctx, float x, float y, float w, float h)
 	h = nvg__maxf(0.0f, h);
 
 	nvgTransformIdentity(state->scissor.xform);
-	state->scissor.xform[4] = x+w*0.5f;
-	state->scissor.xform[5] = y+h*0.5f;
+	state->scissor.xform[6] = x+w*0.5f;
+	state->scissor.xform[7] = y+h*0.5f;
 	nvgTransformMultiply(state->scissor.xform, state->xform);
 
 	state->scissor.extent[0] = w*0.5f;
@@ -989,7 +1014,7 @@ static void nvg__isectRects(float* dst,
 void nvgIntersectScissor(NVGcontext* ctx, float x, float y, float w, float h)
 {
 	NVGstate* state = nvg__getState(ctx);
-	float pxform[6], invxorm[6];
+	float pxform[9], invxorm[9];
 	float rect[4];
 	float ex, ey, tex, tey;
 
@@ -1001,16 +1026,16 @@ void nvgIntersectScissor(NVGcontext* ctx, float x, float y, float w, float h)
 
 	// Transform the current scissor rect into current transform space.
 	// If there is difference in rotation, this will be approximation.
-	memcpy(pxform, state->scissor.xform, sizeof(float)*6);
+	memcpy(pxform, state->scissor.xform, sizeof(float)*9);
 	ex = state->scissor.extent[0];
 	ey = state->scissor.extent[1];
 	nvgTransformInverse(invxorm, state->xform);
 	nvgTransformMultiply(pxform, invxorm);
-	tex = ex*nvg__absf(pxform[0]) + ey*nvg__absf(pxform[2]);
-	tey = ex*nvg__absf(pxform[1]) + ey*nvg__absf(pxform[3]);
+	tex = ex*nvg__absf(pxform[0]) + ey*nvg__absf(pxform[3]);
+	tey = ex*nvg__absf(pxform[1]) + ey*nvg__absf(pxform[4]);
 
 	// Intersect rects.
-	nvg__isectRects(rect, pxform[4]-tex,pxform[5]-tey,tex*2,tey*2, x,y,w,h);
+	nvg__isectRects(rect, pxform[6]-tex,pxform[7]-tey,tex*2,tey*2, x,y,w,h);
 
 	nvgScissor(ctx, rect[0], rect[1], rect[2], rect[3]);
 }
@@ -1214,8 +1239,8 @@ static void nvg__pathWinding(NVGcontext* ctx, int winding)
 
 static float nvg__getAverageScale(float *t)
 {
-	float sx = sqrtf(t[0]*t[0] + t[2]*t[2]);
-	float sy = sqrtf(t[1]*t[1] + t[3]*t[3]);
+	float sx = sqrtf(t[0]*t[0] + t[3]*t[3]);
+	float sy = sqrtf(t[1]*t[1] + t[4]*t[4]);
 	return (sx + sy) * 0.5f;
 }
 
